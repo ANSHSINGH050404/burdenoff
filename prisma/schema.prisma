@@ -16,6 +16,12 @@ enum TicketStatus {
   RESOLVED
   CLOSED
 }
+enum Priority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
 enum SlaState {
   ON_TRACK
   AT_RISK
@@ -41,26 +47,31 @@ model User {
   reportedTickets Ticket[] @relation("Reporter")
   assignedTickets Ticket[] @relation("Assignee")
   events TicketEvent[]
+  comments Comment[] @relation("CommentAuthor")
 }
 model Ticket {
   id String @id @default(cuid())
   title String
   description String
+  priority Priority @default(MEDIUM)
   status TicketStatus @default(OPEN)
   reporterId String
   assigneeId String?
   createdAt DateTime @default(now())
   updatedAt DateTime @updatedAt
-  firstRespondedAt DateTime?
+  firstResponseAt DateTime?
   resolvedAt DateTime?
   responseDeadline DateTime
   resolutionDeadline DateTime
   reporter User @relation("Reporter", fields: [reporterId], references: [id])
   assignee User? @relation("Assignee", fields: [assigneeId], references: [id])
   events TicketEvent[]
+  comments Comment[]
   resolutionAttempts ResolutionAttempt[]
   @@index([createdAt, id])
   @@index([status])
+  @@index([priority])
+  @@index([assigneeId])
 }
 model TicketEvent {
   id String @id @default(cuid())
@@ -75,12 +86,25 @@ model TicketEvent {
   actor User @relation(fields: [actorId], references: [id])
   @@index([ticketId, createdAt])
 }
+model Comment {
+  id String @id @default(cuid())
+  ticketId String
+  authorId String
+  content String
+  createdAt DateTime @default(now())
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  author User @relation("CommentAuthor", fields: [authorId], references: [id])
+  @@index([ticketId, createdAt])
+}
 model ResolutionAttempt {
   id String @id @default(cuid())
   ticketId String
   startedAt DateTime @default(now())
   resolvedAt DateTime?
+  dueAt DateTime
+  state SlaState @default(ON_TRACK)
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  @@index([ticketId, startedAt])
 }
 model Holiday {
   id String @id @default(cuid())
