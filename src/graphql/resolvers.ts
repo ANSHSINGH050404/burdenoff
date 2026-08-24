@@ -77,6 +77,16 @@ export function createResolvers(db: PrismaClient, clock: () => Date = () => new 
         computeSlaInfo(parent as TicketRecord, await holidayDates(db), clock),
     },
     Comment: { author: (parent: unknown) => (parent as { author: unknown }).author },
+    TicketEvent: {
+      fromAssignee: (parent: unknown) => {
+        const id = (parent as { fromAssigneeId?: string }).fromAssigneeId;
+        return id ? db.user.findUnique({ where: { id } }) : null;
+      },
+      toAssignee: (parent: unknown) => {
+        const id = (parent as { toAssigneeId?: string }).toAssigneeId;
+        return id ? db.user.findUnique({ where: { id } }) : null;
+      },
+    },
     Holiday: {
       date: (parent: unknown) => localDate((parent as { date: Date }).date, businessTimezone()),
     },

@@ -38,6 +38,7 @@ export type Ticket = {
   assignee?: User;
   comments: Comment[];
   resolutionAttempts: ResolutionAttempt[];
+  events?: TicketEvent[];
   sla: SlaInfo;
 };
 
@@ -53,6 +54,26 @@ export type Dashboard = {
 export type ConnectionPage = { hasNextPage: boolean; endCursor?: string };
 
 export type Holiday = { id: string; date: string; name: string };
+
+export type TicketEvent = {
+  id: string;
+  type:
+    | 'CREATED'
+    | 'STATUS_CHANGED'
+    | 'ASSIGNED'
+    | 'FIRST_RESPONSE'
+    | 'COMMENT'
+    | 'RESOLVED'
+    | 'REOPENED'
+    | 'CLOSED';
+  createdAt: string;
+  body?: string;
+  actor: User;
+  fromStatus?: Status;
+  toStatus?: Status;
+  fromAssignee?: User;
+  toAssignee?: User;
+};
 
 export type AuthPayload = { token: string; user: User };
 

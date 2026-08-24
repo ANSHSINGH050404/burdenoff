@@ -31,6 +31,7 @@ enum SlaState {
 enum EventType {
   CREATED
   STATUS_CHANGED
+  ASSIGNED
   FIRST_RESPONSE
   COMMENT
   RESOLVED
@@ -82,6 +83,8 @@ model TicketEvent {
   type EventType
   fromStatus TicketStatus?
   toStatus TicketStatus?
+  fromAssigneeId String?
+  toAssigneeId String?
   body String?
   createdAt DateTime @default(now())
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
