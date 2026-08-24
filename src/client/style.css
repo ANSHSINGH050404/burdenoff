@@ -419,3 +419,14 @@ button.quiet {
 .holiday-list small {
   color: #657269;
 }
+
+.auth-error {
+  margin: 0;
+  padding: 0.6rem 0.75rem;
+  border: 1px solid #df603b;
+  border-radius: 3px;
+  background: #fdeee8;
+  color: #a33d1f;
+  font-size: 0.85rem;
+  word-break: break-word;
+}

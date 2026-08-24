@@ -63,14 +63,18 @@ async function request<T>(token: string, query: string, variables: Variables = {
     },
     body: JSON.stringify({ query, variables }),
   });
-  const result = (await response.json()) as GraphQLResult<T>;
-  if (!response.ok || result.errors?.length)
+  const result = (await response.json().catch(() => null)) as GraphQLResult<T> | null;
+  if (!result)
     throw new Error(
-      (result.errors ?? [{ message: 'Request failed' }])
+      `HTTP_${response.status}: no GraphQL response. Is the API running? Start it with "bun run dev".`,
+    );
+  if (result.errors?.length)
+    throw new Error(
+      result.errors
         .map((item) => `${item.extensions?.code ?? 'ERROR'}: ${item.message}`)
         .join('\n'),
     );
-  if (!result.data) throw new Error('EMPTY_RESPONSE');
+  if (!response.ok || !result.data) throw new Error(`EMPTY_RESPONSE (HTTP ${response.status})`);
   return result.data;
 }
 const userFields = 'id name email role';
@@ -95,9 +99,11 @@ function formatDateTime(value?: string): string {
 function Auth({
   onLogin,
   onError,
+  errorMessage,
 }: {
   onLogin: (token: string, user: User) => void;
   onError: (message: string) => void;
+  errorMessage?: string;
 }) {
   const [registering, setRegistering] = useState(false);
   const [name, setName] = useState('');
@@ -132,6 +138,11 @@ function Auth({
       <form className="panel auth" onSubmit={submit}>
         <span className="eyebrow">{registering ? 'NEW REPORTER' : 'WORKSPACE ACCESS'}</span>
         <h2>{registering ? 'Create an account' : 'Welcome back'}</h2>
+        {errorMessage && (
+          <p className="auth-error" role="alert">
+            {errorMessage}
+          </p>
+        )}
         {registering && (
           <label>
             Name
@@ -239,6 +250,7 @@ function App() {
           setMe(user);
         }}
         onError={setError}
+        errorMessage={error}
       />
     );
   const ordered = sort === 'oldest' ? [...tickets].reverse() : tickets;
