@@ -16,6 +16,10 @@ describe('GraphQL PostgreSQL persistence flow', () => {
     const created = await graphql({ schema, source: 'mutation { createTicket(title: "Outage", description: "Down", priority: URGENT) { id priority firstResponseAt comments { content } resolutionAttempts { dueAt state remainingBusinessMinutes } } }', contextValue: context(reporter.id, reporter.role) });
     expect(created.errors).toBeUndefined(); const createdData = created.data as { createTicket: { id: string } } | null; if (!createdData) throw new Error('ticket was not created'); const ticketId = createdData.createTicket.id;
     const commented = await graphql({ schema, source: `mutation { addComment(ticketId: "${ticketId}", content: "Working on it") { content } }`, contextValue: context(agent.id, agent.role) });
-    expect(commented.errors).toBeUndefined(); expect((await db.ticket.findUniqueOrThrow({ where: { id: ticketId } })).firstResponseAt).not.toBeNull(); expect(await db.comment.count({ where: { ticketId } })).toBe(1); await db.$disconnect();
+    expect(commented.errors).toBeUndefined(); expect((await db.ticket.findUniqueOrThrow({ where: { id: ticketId } })).firstResponseAt).not.toBeNull(); expect(await db.comment.count({ where: { ticketId } })).toBe(1);
+    const forbidden = await graphql({ schema, source: 'mutation { register(name: "Agent", email: "should-not-register@example.com", password: "password", role: AGENT) { token } }' });
+    expect(forbidden.errors?.[0]?.extensions.code).toBe('FORBIDDEN');
+    const invalidTransition = await graphql({ schema, source: `mutation { changeTicketStatus(ticketId: "${ticketId}", status: RESOLVED) { id } }`, contextValue: context(agent.id, agent.role) });
+    expect(invalidTransition.errors?.[0]?.extensions.code).toBe('INVALID_STATUS_TRANSITION'); await db.$disconnect();
   });
 });
