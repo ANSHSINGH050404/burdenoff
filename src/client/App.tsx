@@ -7,7 +7,17 @@ import {
   ticketDetailQuery,
   usersQuery,
 } from './api/queries';
-import type { ConnectionPage, Dashboard, Holiday, Ticket, TicketFilters, User } from './api/types';
+import type {
+  AgentStat,
+  ConnectionPage,
+  Dashboard,
+  Holiday,
+  Ticket,
+  TicketFilters,
+  User,
+} from './api/types';
+import { agentStatsQuery } from './api/queries';
+import { AgentStats } from './components/AgentStats';
 import { AuthForm } from './components/AuthForm';
 import { CreateTicketForm } from './components/CreateTicketForm';
 import { DashboardStats } from './components/DashboardStats';
@@ -22,6 +32,7 @@ export function App() {
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Ticket>();
   const [dashboard, setDashboard] = useState<Dashboard>();
+  const [agentStats, setAgentStats] = useState<AgentStat[]>();
   const [users, setUsers] = useState<User[]>([]);
   const [holidays, setHolidays] = useState<Holiday[]>([]);
   const [filters, setFilters] = useState<TicketFilters>({});
@@ -31,7 +42,7 @@ export function App() {
   async function refresh() {
     try {
       setError('');
-      const [list, stats, people, days] = await Promise.all([
+      const baseRequests = [
         request<{ tickets: { nodes: Ticket[]; pageInfo: ConnectionPage } }>(token, listQuery, {
           take: 50,
           ...filters,
@@ -39,12 +50,17 @@ export function App() {
         request<{ dashboard: Dashboard }>(token, dashboardQuery),
         request<{ users: User[] }>(token, usersQuery),
         request<{ holidays: Holiday[] }>(token, holidaysQuery),
-      ]);
+        me?.role === 'AGENT'
+          ? request<{ agentStats: AgentStat[] }>(token, agentStatsQuery)
+          : Promise.resolve(null),
+      ] as const;
+      const [list, stats, people, days, perf] = await Promise.all(baseRequests);
       setTickets(list.tickets.nodes);
       setPage(list.tickets.pageInfo);
       setDashboard(stats.dashboard);
       setUsers(people.users);
       setHolidays(days.holidays);
+      if (perf) setAgentStats(perf.agentStats);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'LOAD_FAILED');
     }
@@ -137,6 +153,8 @@ export function App() {
       )}
 
       <DashboardStats dashboard={dashboard} />
+
+      <AgentStats stats={agentStats} />
 
       <div className="mt-5 grid gap-5 lg:grid-cols-[minmax(0,1fr)_430px]">
         <section className="min-w-0 rounded border border-stone-200 bg-white shadow-sm">

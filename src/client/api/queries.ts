@@ -7,6 +7,8 @@ export const ticketDetailQuery = `query Ticket($id: ID!) { ticket(id: $id) { ${t
 
 export const dashboardQuery = `query Dashboard { dashboard { total open inProgress resolved closed breached } }`;
 
+export const agentStatsQuery = `query AgentStats { agentStats { agent { ${userFields} } assignedTickets openAssigned resolvedTickets avgFirstResponseBusinessMinutes } }`;
+
 export const usersQuery = `query Users { users { ${userFields} } }`;
 
 export const holidaysQuery = `query Holidays { holidays { id date name } }`;
