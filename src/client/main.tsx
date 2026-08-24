@@ -46,6 +46,8 @@ type Dashboard = {
   closed: number;
   breached: number;
 };
+type ConnectionPage = { hasNextPage: boolean; endCursor?: string };
+type Holiday = { id: string; date: string; name: string };
 type GraphQLResult<T> = {
   data?: T;
   errors?: { message: string; extensions?: { code?: string } }[];
@@ -77,6 +79,18 @@ const listQuery = `query Tickets($take: Int, $cursor: String, $status: TicketSta
 const detailQuery = `query Ticket($id: ID!) { ticket(id: $id) { ${ticketFields} } }`;
 const dashboardQuery = `query Dashboard { dashboard { total open inProgress resolved closed breached } }`;
 const usersQuery = `query Users { users { ${userFields} } }`;
+const holidaysQuery = `query Holidays { holidays { id date name } }`;
+
+const NEXT_STATUSES: Record<Status, Status[]> = {
+  OPEN: ['IN_PROGRESS'],
+  IN_PROGRESS: ['OPEN', 'RESOLVED'],
+  RESOLVED: ['CLOSED'],
+  CLOSED: [],
+};
+
+function formatDateTime(value?: string): string {
+  return value ? new Date(value).toLocaleString() : '—';
+}
 
 function Auth({
   onLogin,
@@ -167,18 +181,42 @@ function App() {
     slaState?: SlaState;
   }>({});
   const [sort, setSort] = useState('newest');
+  const [page, setPage] = useState<ConnectionPage>();
+  const [holidays, setHolidays] = useState<Holiday[]>([]);
   async function refresh() {
     try {
       setError('');
-      const variables = { take: 50, ...filters };
-      const [list, stats, people] = await Promise.all([
-        request<{ tickets: { nodes: Ticket[] } }>(token, listQuery, variables),
+      const [list, stats, people, days] = await Promise.all([
+        request<{ tickets: { nodes: Ticket[]; pageInfo: ConnectionPage } }>(token, listQuery, {
+          take: 50,
+          ...filters,
+        }),
         request<{ dashboard: Dashboard }>(token, dashboardQuery),
         request<{ users: User[] }>(token, usersQuery),
+        request<{ holidays: Holiday[] }>(token, holidaysQuery),
       ]);
       setTickets(list.tickets.nodes);
+      setPage(list.tickets.pageInfo);
       setDashboard(stats.dashboard);
       setUsers(people.users);
+      setHolidays(days.holidays);
+    } catch (caught) {
+      setError(caught instanceof Error ? caught.message : 'LOAD_FAILED');
+    }
+  }
+  async function loadMore() {
+    if (!page?.endCursor) return;
+    try {
+      const list = await request<{ tickets: { nodes: Ticket[]; pageInfo: ConnectionPage } }>(
+        token,
+        listQuery,
+        { take: 50, cursor: page.endCursor, ...filters },
+      );
+      setTickets((previous) => [
+        ...previous,
+        ...list.tickets.nodes.filter((node) => !previous.some((item) => item.id === node.id)),
+      ]);
+      setPage(list.tickets.pageInfo);
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'LOAD_FAILED');
     }
@@ -238,6 +276,7 @@ function App() {
           ['OPEN', dashboard?.open],
           ['IN PROGRESS', dashboard?.inProgress],
           ['RESOLVED', dashboard?.resolved],
+          ['CLOSED', dashboard?.closed],
           ['BREACHED', dashboard?.breached],
         ].map(([label, value]) => (
           <div className="stat panel" key={String(label)}>
@@ -348,6 +387,11 @@ function App() {
               </button>
             ))}
           </div>
+          {page?.hasNextPage && (
+            <button className="load-more" onClick={() => void loadMore()}>
+              Load more
+            </button>
+          )}
         </section>
         {selected ? (
           <TicketDetail
@@ -365,6 +409,16 @@ function App() {
           <aside className="empty panel">
             <span className="eyebrow">SELECT A TICKET</span>
             <p>Choose a ticket to inspect its SLA clock, conversation, and ownership.</p>
+            {holidays.length > 0 && (
+              <div className="holiday-list">
+                <span className="eyebrow">HOLIDAY CALENDAR</span>
+                {holidays.map((holiday) => (
+                  <small key={holiday.id}>
+                    {holiday.date} · {holiday.name}
+                  </small>
+                ))}
+              </div>
+            )}
           </aside>
         )}
       </div>
@@ -403,7 +457,7 @@ function CreateTicket({
   }
   return (
     <>
-      {<button onClick={() => setOpen(!open)}>+ New ticket</button>}
+      <button onClick={() => setOpen(!open)}>+ New ticket</button>
       {open && (
         <form className="create-form panel" onSubmit={submit}>
           <h3>Open a ticket</h3>
@@ -450,6 +504,7 @@ function TicketDetail({
   onError: (message: string) => void;
 }) {
   const [content, setContent] = useState('');
+  const [sendingComment, setSendingComment] = useState(false);
   const agent = me.role === 'AGENT';
   async function action(query: string, variables: Variables) {
     try {
@@ -459,6 +514,24 @@ function TicketDetail({
       onError(caught instanceof Error ? caught.message : 'ACTION_FAILED');
     }
   }
+  async function submitComment(event: React.FormEvent) {
+    event.preventDefault();
+    setSendingComment(true);
+    try {
+      await request(
+        token,
+        `mutation Comment($ticketId: ID!, $content: String!) { addComment(ticketId: $ticketId, content: $content) { id } }`,
+        { ticketId: ticket.id, content },
+      );
+      setContent('');
+      onDone();
+    } catch (caught) {
+      onError(caught instanceof Error ? caught.message : 'ACTION_FAILED');
+    } finally {
+      setSendingComment(false);
+    }
+  }
+  const nextStatuses = NEXT_STATUSES[ticket.status];
   return (
     <aside className="detail panel">
       <div className="detail-heading">
@@ -475,18 +548,40 @@ function TicketDetail({
           <b>{ticket.priority}</b>
         </div>
         <div>
+          <small>ASSIGNEE</small>
+          <b>{ticket.assignee?.name ?? 'Unassigned'}</b>
+        </div>
+        <div>
           <small>REPORTER</small>
           <b>{ticket.reporter.name}</b>
         </div>
         <div>
+          <small>CREATED</small>
+          <b>{formatDateTime(ticket.createdAt)}</b>
+        </div>
+        <div>
           <small>FIRST RESPONSE</small>
           <b>{ticket.sla.firstResponseState}</b>
-          <span>{ticket.sla.firstResponseRemainingMinutes} min remaining</span>
+          {ticket.firstResponseAt ? (
+            <span>Responded {formatDateTime(ticket.firstResponseAt)}</span>
+          ) : (
+            <>
+              <span>{ticket.sla.firstResponseRemainingMinutes} business min left</span>
+              <span>Due {formatDateTime(ticket.sla.firstResponseDueAt)}</span>
+            </>
+          )}
         </div>
         <div>
           <small>RESOLUTION</small>
           <b>{ticket.sla.resolutionState}</b>
-          <span>{ticket.sla.resolutionRemainingMinutes} min remaining</span>
+          {ticket.resolvedAt ? (
+            <span>Resolved {formatDateTime(ticket.resolvedAt)}</span>
+          ) : (
+            <>
+              <span>{ticket.sla.resolutionRemainingMinutes} business min left</span>
+              <span>Due {formatDateTime(ticket.sla.resolutionDueAt)}</span>
+            </>
+          )}
         </div>
       </div>
       {agent && (
@@ -510,30 +605,23 @@ function TicketDetail({
                 </option>
               ))}
           </select>
-          <select
-            value={ticket.status}
-            onChange={(event) =>
-              void action(
-                `mutation Status($ticketId: ID!, $status: TicketStatus!) { changeTicketStatus(ticketId: $ticketId, status: $status) { id } }`,
-                { ticketId: ticket.id, status: event.target.value },
-              )
-            }
-          >
-            {(['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'] as Status[]).map((value) => (
-              <option key={value}>{value}</option>
-            ))}
-          </select>
-          {ticket.status === 'RESOLVED' && (
-            <button
-              onClick={() =>
-                void action(
-                  `mutation Reopen($ticketId: ID!) { reopenTicket(ticketId: $ticketId) { id } }`,
-                  { ticketId: ticket.id },
-                )
-              }
+          {nextStatuses.length > 0 && (
+            <select
+              aria-label="Change status"
+              value=""
+              onChange={(event) => {
+                if (event.target.value)
+                  void action(
+                    `mutation Status($ticketId: ID!, $status: TicketStatus!) { changeTicketStatus(ticketId: $ticketId, status: $status) { id } }`,
+                    { ticketId: ticket.id, status: event.target.value },
+                  );
+              }}
             >
-              Reopen
-            </button>
+              <option value="">Move to…</option>
+              {nextStatuses.map((value) => (
+                <option key={value}>{value}</option>
+              ))}
+            </select>
           )}
           {ticket.status === 'IN_PROGRESS' && (
             <button
@@ -545,6 +633,18 @@ function TicketDetail({
               }
             >
               Resolve
+            </button>
+          )}
+          {ticket.status === 'RESOLVED' && (
+            <button
+              onClick={() =>
+                void action(
+                  `mutation Reopen($ticketId: ID!) { reopenTicket(ticketId: $ticketId) { id } }`,
+                  { ticketId: ticket.id },
+                )
+              }
+            >
+              Reopen
             </button>
           )}
         </div>
@@ -564,12 +664,7 @@ function TicketDetail({
         <form
           className="comment-form"
           onSubmit={(event) => {
-            event.preventDefault();
-            void action(
-              `mutation Comment($ticketId: ID!, $content: String!) { addComment(ticketId: $ticketId, content: $content) { id } }`,
-              { ticketId: ticket.id, content },
-            );
-            setContent('');
+            void submitComment(event);
           }}
         >
           <textarea
@@ -578,7 +673,9 @@ function TicketDetail({
             value={content}
             onChange={(event) => setContent(event.target.value)}
           />
-          <button type="submit">Add comment</button>
+          <button type="submit" disabled={sendingComment}>
+            {sendingComment ? 'Sending…' : 'Add comment'}
+          </button>
         </form>
       </div>
     </aside>

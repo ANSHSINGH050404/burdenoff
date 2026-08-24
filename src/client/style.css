@@ -403,3 +403,19 @@ button.quiet {
     min-width: calc(50% - 0.5rem);
   }
 }
+
+.load-more {
+  margin-top: 0.75rem;
+  width: 100%;
+  background: transparent;
+  color: #526258;
+  border: 1px dashed #d4d0c2;
+}
+.holiday-list {
+  margin-top: 1.25rem;
+  display: grid;
+  gap: 0.35rem;
+}
+.holiday-list small {
+  color: #657269;
+}
