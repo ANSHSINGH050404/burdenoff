@@ -1,1 +1,32 @@
 scalar DateTime
+enum Role { REPORTER AGENT }
+enum Priority { URGENT HIGH MEDIUM LOW }
+enum TicketStatus { OPEN IN_PROGRESS RESOLVED CLOSED }
+enum SlaState { ON_TRACK AT_RISK BREACHED }
+type User { id: ID!, email: String!, name: String!, role: Role!, createdAt: DateTime! }
+type Comment { id: ID!, body: String!, author: User!, createdAt: DateTime! }
+type Holiday { id: ID!, date: DateTime!, name: String! }
+type SLA { response: SlaState!, resolution: SlaState!, responseDueAt: DateTime!, resolutionDueAt: DateTime! }
+type Ticket { id: ID!, title: String!, description: String!, priority: Priority!, status: TicketStatus!, reporter: User!, assignee: User, comments: [Comment!]!, createdAt: DateTime!, updatedAt: DateTime!, firstResponseAt: DateTime, resolvedAt: DateTime, sla: SLA! }
+type PageInfo { hasNextPage: Boolean!, endCursor: String }
+type TicketConnection { nodes: [Ticket!]!, pageInfo: PageInfo! }
+type Dashboard { total: Int!, open: Int!, inProgress: Int!, resolved: Int!, closed: Int!, breached: Int! }
+type AuthPayload { token: String!, user: User! }
+input TicketFilter { status: TicketStatus, priority: Priority, assigneeId: ID, slaState: SlaState }
+type Query {
+  tickets(id: ID, status: TicketStatus, priority: Priority, assigneeId: ID, slaState: SlaState, take: Int = 20, cursor: String, filter: TicketFilter): TicketConnection!
+  ticket(id: ID!): Ticket
+  dashboard: Dashboard!
+  users(role: Role): [User!]!
+  holidays: [Holiday!]!
+}
+type Mutation {
+  createTicket(title: String!, description: String!, priority: Priority = MEDIUM): Ticket!
+  assignTicket(id: ID!, assigneeId: ID!): Ticket!
+  changeTicketStatus(id: ID!, status: TicketStatus!, body: String): Ticket!
+  addComment(ticketId: ID!, body: String!): Comment!
+  resolveTicket(id: ID!, body: String): Ticket!
+  reopenTicket(id: ID!, body: String): Ticket!
+  register(email: String!, name: String!, password: String!): AuthPayload!
+  login(email: String!, password: String!): AuthPayload!
+}
