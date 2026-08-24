@@ -8,7 +8,8 @@ A minimal support-ticket service built with Bun, TypeScript, GraphQL Yoga, Prism
 2. Start PostgreSQL with `docker compose up -d`.
 3. Run `bun install`, `bunx prisma migrate dev --name init`, and `bun run db:seed`.
 4. Start the API with `bun run dev`; GraphQL is at `http://localhost:4000/graphql`.
-5. Build the browser client with `bun run build`.
+5. In a second terminal, run `bun run dev:client`; open `http://localhost:5173`.
+6. Build the browser client with `bun run build`.
 
 Demo accounts are `reporter@example.com` and `agent@example.com`, both using `password`.
 

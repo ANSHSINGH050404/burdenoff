@@ -4,6 +4,7 @@
   "type": "module",
   "scripts": {
     "dev": "bun run src/server.ts",
+    "dev:client": "vite",
     "build": "bun run build:client",
     "build:client": "vite build",
     "typecheck": "tsc --noEmit",
