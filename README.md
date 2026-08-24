@@ -8,6 +8,7 @@ A minimal support-ticket service built with Bun, TypeScript, GraphQL Yoga, Prism
 2. Start PostgreSQL with `docker compose up -d`.
 3. Run `bun install`, `bunx prisma migrate dev --name init`, and `bun run db:seed`.
 4. Start the API with `bun run dev`; GraphQL is at `http://localhost:4000/graphql`.
+5. Build the browser client with `bun run build`.
 
 Demo accounts are `reporter@example.com` and `agent@example.com`, both using `password`.
 
@@ -19,8 +20,8 @@ Business hours are 09:00-17:00 on weekdays in `Asia/Kolkata` by default. Holiday
 
 ## Tests
 
-`bun test` runs domain tests. Set `TEST_DATABASE_URL` to run the PostgreSQL integration test; apply the same migration to that database first, for example with `DATABASE_URL=$TEST_DATABASE_URL bunx prisma migrate deploy`.
+`bun test` runs domain tests. Set `TEST_DATABASE_URL` to run the PostgreSQL integration test with `bun run test:integration`; apply the same migration to that database first, for example with `DATABASE_URL=$TEST_DATABASE_URL bunx prisma migrate deploy`. `bun run typecheck` and `bun run lint` are also available.
 
 ## API notes
 
-All operations except `register` and `login` require `Authorization: Bearer <jwt>`. Ticket connections use newest-first cursor pagination by default, accept API sorting, and calculate SLA filters before pagination. Domain/auth failures expose `extensions.code`.
+All operations except `register` and `login` require `Authorization: Bearer <jwt>`. The schema exposes ticket list/detail, dashboard, users, holidays, comments, assignment, status changes, resolution, reopening, and authentication. Ticket connections use newest-first cursor pagination and calculate SLA filters before pagination. Domain/auth failures expose `extensions.code`.
