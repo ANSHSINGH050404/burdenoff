@@ -1,4 +1,4 @@
-import type { ConnectionPage, Ticket } from '../api/types';
+import type { ConnectionPage, SlaState, Ticket } from '../api/types';
 import { PRIORITY_BADGE, SLA_DOT, STATUS_BADGE } from '../lib/ui';
 
 type Props = {
@@ -8,6 +8,11 @@ type Props = {
   page?: ConnectionPage;
   onLoadMore: () => void;
 };
+
+function slaClock(state: SlaState, remainingMinutes: number, completed: boolean): string {
+  if (completed) return state === 'ON_TRACK' ? 'Met' : 'Missed';
+  return `${remainingMinutes}m`;
+}
 
 export function TicketList({ tickets, selectedId, onSelect, page, onLoadMore }: Props) {
   return (
@@ -39,7 +44,13 @@ export function TicketList({ tickets, selectedId, onSelect, page, onLoadMore }: 
                 />
                 {ticket.sla.resolutionState}
               </span>
-              <span>{ticket.sla.resolutionRemainingMinutes} min left</span>
+              <span>
+                {slaClock(
+                  ticket.sla.resolutionState,
+                  ticket.sla.resolutionRemainingMinutes,
+                  Boolean(ticket.resolvedAt),
+                )}
+              </span>
             </span>
             <span
               className={`rounded px-2 py-1 text-[11px] font-bold ${STATUS_BADGE[ticket.status]}`}
