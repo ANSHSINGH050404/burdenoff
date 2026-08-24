@@ -16,7 +16,7 @@ Demo accounts are `reporter@example.com` and `agent@example.com`, both using `pa
 
 Registration always creates a reporter. Agents are provisioned administratively/through the seed. Reporters see their own tickets; agents see all tickets and active users. The legal transitions are `OPEN -> IN_PROGRESS`, `IN_PROGRESS -> OPEN/RESOLVED`, `RESOLVED -> CLOSED`; closed tickets are terminal and only resolved tickets can be reopened. Reopening starts a new resolution attempt without changing original SLA deadlines.
 
-Business hours are 09:00-17:00 on weekdays in `Asia/Kolkata` by default. Holidays are date-only records. SLA state is calculated at read time; completed work uses event timestamps while the enum remains `ON_TRACK`, `AT_RISK`, or `BREACHED`.
+Business hours are 09:00-18:00 on weekdays in `Asia/Kolkata` by default. Holidays are date-only records. SLA state is calculated at read time; completed work uses event timestamps while the enum remains `ON_TRACK`, `AT_RISK`, or `BREACHED`.
 
 ## Tests
 
