@@ -14,6 +14,7 @@
     "test": "bun test",
     "test:integration": "bun test tests/integration.test.ts",
     "db:generate": "prisma generate",
+    "gendb": "prisma generate && prisma migrate dev && bun prisma/seed.ts",
     "db:migrate": "prisma migrate dev",
     "db:seed": "bun prisma/seed.ts"
   },
