@@ -1,0 +1,90 @@
+generator client {
+  provider = "prisma-client-js"
+}
+datasource db {
+  provider = "postgresql"
+  url = env("DATABASE_URL")
+}
+
+enum Role {
+  REPORTER
+  AGENT
+}
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+enum SlaState {
+  ON_TRACK
+  AT_RISK
+  BREACHED
+}
+enum EventType {
+  CREATED
+  STATUS_CHANGED
+  FIRST_RESPONSE
+  COMMENT
+  RESOLVED
+  REOPENED
+  CLOSED
+}
+
+model User {
+  id String @id @default(cuid())
+  email String @unique
+  name String
+  passwordHash String
+  role Role
+  createdAt DateTime @default(now())
+  reportedTickets Ticket[] @relation("Reporter")
+  assignedTickets Ticket[] @relation("Assignee")
+  events TicketEvent[]
+}
+model Ticket {
+  id String @id @default(cuid())
+  title String
+  description String
+  status TicketStatus @default(OPEN)
+  reporterId String
+  assigneeId String?
+  createdAt DateTime @default(now())
+  updatedAt DateTime @updatedAt
+  firstRespondedAt DateTime?
+  resolvedAt DateTime?
+  responseDeadline DateTime
+  resolutionDeadline DateTime
+  reporter User @relation("Reporter", fields: [reporterId], references: [id])
+  assignee User? @relation("Assignee", fields: [assigneeId], references: [id])
+  events TicketEvent[]
+  resolutionAttempts ResolutionAttempt[]
+  @@index([createdAt, id])
+  @@index([status])
+}
+model TicketEvent {
+  id String @id @default(cuid())
+  ticketId String
+  actorId String
+  type EventType
+  fromStatus TicketStatus?
+  toStatus TicketStatus?
+  body String?
+  createdAt DateTime @default(now())
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  actor User @relation(fields: [actorId], references: [id])
+  @@index([ticketId, createdAt])
+}
+model ResolutionAttempt {
+  id String @id @default(cuid())
+  ticketId String
+  startedAt DateTime @default(now())
+  resolvedAt DateTime?
+  ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+}
+model Holiday {
+  id String @id @default(cuid())
+  date DateTime @db.Date
+  name String
+  @@unique([date])
+}
