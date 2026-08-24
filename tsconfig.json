@@ -1,4 +1,13 @@
 {
-  "compilerOptions": { "target": "ES2022", "module": "ESNext", "moduleResolution": "Bundler", "strict": true, "noUncheckedIndexedAccess": true, "skipLibCheck": true, "jsx": "react-jsx", "types": ["bun"] },
+  "compilerOptions": {
+    "target": "ES2022",
+    "module": "ESNext",
+    "moduleResolution": "Bundler",
+    "strict": true,
+    "noUncheckedIndexedAccess": true,
+    "skipLibCheck": true,
+    "jsx": "react-jsx",
+    "types": ["bun"]
+  },
   "include": ["src", "prisma", "tests", "vite.config.ts"]
 }

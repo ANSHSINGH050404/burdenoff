@@ -1,21 +1,112 @@
 scalar DateTime
-enum UserRole { REPORTER AGENT }
-enum Priority { URGENT HIGH MEDIUM LOW }
-enum TicketStatus { OPEN IN_PROGRESS RESOLVED CLOSED }
-enum SLAState { ON_TRACK AT_RISK BREACHED }
-type User { id: ID!, email: String!, name: String!, role: UserRole!, createdAt: DateTime! }
-type Comment { id: ID!, content: String!, author: User!, createdAt: DateTime! }
-type Holiday { id: ID!, date: String!, name: String! }
-type SLA { firstResponseDueAt: DateTime!, resolutionDueAt: DateTime!, firstResponseState: SLAState!, resolutionState: SLAState!, firstResponseRemainingMinutes: Int!, resolutionRemainingMinutes: Int! }
-type ResolutionAttempt { id: ID!, startedAt: DateTime!, resolvedAt: DateTime, dueAt: DateTime!, state: SLAState!, remainingBusinessMinutes: Int! }
-type Ticket { id: ID!, title: String!, description: String!, priority: Priority!, status: TicketStatus!, reporter: User!, assignee: User, comments: [Comment!]!, resolutionAttempts: [ResolutionAttempt!]!, createdAt: DateTime!, updatedAt: DateTime!, firstResponseAt: DateTime, resolvedAt: DateTime, sla: SLA! }
-type PageInfo { hasNextPage: Boolean!, endCursor: String }
-type TicketConnection { nodes: [Ticket!]!, pageInfo: PageInfo! }
-type Dashboard { total: Int!, open: Int!, inProgress: Int!, resolved: Int!, closed: Int!, breached: Int! }
-type AuthPayload { token: String!, user: User! }
-input TicketFilter { status: TicketStatus, priority: Priority, assigneeId: ID, slaState: SLAState }
+enum UserRole {
+  REPORTER
+  AGENT
+}
+enum Priority {
+  URGENT
+  HIGH
+  MEDIUM
+  LOW
+}
+enum TicketStatus {
+  OPEN
+  IN_PROGRESS
+  RESOLVED
+  CLOSED
+}
+enum SLAState {
+  ON_TRACK
+  AT_RISK
+  BREACHED
+}
+type User {
+  id: ID!
+  email: String!
+  name: String!
+  role: UserRole!
+  createdAt: DateTime!
+}
+type Comment {
+  id: ID!
+  content: String!
+  author: User!
+  createdAt: DateTime!
+}
+type Holiday {
+  id: ID!
+  date: String!
+  name: String!
+}
+type SLA {
+  firstResponseDueAt: DateTime!
+  resolutionDueAt: DateTime!
+  firstResponseState: SLAState!
+  resolutionState: SLAState!
+  firstResponseRemainingMinutes: Int!
+  resolutionRemainingMinutes: Int!
+}
+type ResolutionAttempt {
+  id: ID!
+  startedAt: DateTime!
+  resolvedAt: DateTime
+  dueAt: DateTime!
+  state: SLAState!
+  remainingBusinessMinutes: Int!
+}
+type Ticket {
+  id: ID!
+  title: String!
+  description: String!
+  priority: Priority!
+  status: TicketStatus!
+  reporter: User!
+  assignee: User
+  comments: [Comment!]!
+  resolutionAttempts: [ResolutionAttempt!]!
+  createdAt: DateTime!
+  updatedAt: DateTime!
+  firstResponseAt: DateTime
+  resolvedAt: DateTime
+  sla: SLA!
+}
+type PageInfo {
+  hasNextPage: Boolean!
+  endCursor: String
+}
+type TicketConnection {
+  nodes: [Ticket!]!
+  pageInfo: PageInfo!
+}
+type Dashboard {
+  total: Int!
+  open: Int!
+  inProgress: Int!
+  resolved: Int!
+  closed: Int!
+  breached: Int!
+}
+type AuthPayload {
+  token: String!
+  user: User!
+}
+input TicketFilter {
+  status: TicketStatus
+  priority: Priority
+  assigneeId: ID
+  slaState: SLAState
+}
 type Query {
-  tickets(id: ID, status: TicketStatus, priority: Priority, assigneeId: ID, slaState: SLAState, take: Int = 20, cursor: String, filter: TicketFilter): TicketConnection!
+  tickets(
+    id: ID
+    status: TicketStatus
+    priority: Priority
+    assigneeId: ID
+    slaState: SLAState
+    take: Int = 20
+    cursor: String
+    filter: TicketFilter
+  ): TicketConnection!
   ticket(id: ID!): Ticket
   dashboard: Dashboard!
   users(role: UserRole): [User!]!
@@ -28,6 +119,11 @@ type Mutation {
   addComment(ticketId: ID!, content: String!): Comment!
   resolveTicket(ticketId: ID!): Ticket!
   reopenTicket(ticketId: ID!): Ticket!
-  register(name: String!, email: String!, password: String!, role: UserRole = REPORTER): AuthPayload!
+  register(
+    name: String!
+    email: String!
+    password: String!
+    role: UserRole = REPORTER
+  ): AuthPayload!
   login(email: String!, password: String!): AuthPayload!
 }
