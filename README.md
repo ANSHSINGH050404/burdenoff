@@ -111,14 +111,15 @@ Illegal transitions fail with `INVALID_STATUS_TRANSITION`.
 
 Copy `.env.example` to `.env` (never committed):
 
-| Variable            | Purpose                            | Default        |
-| ------------------- | ---------------------------------- | -------------- |
-| `DATABASE_URL`      | PostgreSQL connection string       | compose value  |
-| `TEST_DATABASE_URL` | Database used by integration tests | —              |
-| `JWT_SECRET`        | Token signing secret               | dev fallback   |
-| `PORT`              | API port                           | `4000`         |
-| `BUSINESS_TIMEZONE` | IANA zone for business hours       | `Asia/Kolkata` |
-| `RATE_LIMIT_MAX`    | GraphQL requests per minute per IP | `240`          |
+| Variable            | Purpose                                      | Default        |
+| ------------------- | -------------------------------------------- | -------------- |
+| `DATABASE_URL`      | PostgreSQL connection string                 | compose value  |
+| `TEST_DATABASE_URL` | Database used by integration tests           | —              |
+| `JWT_SECRET`        | Token signing secret                         | dev fallback   |
+| `PORT`              | API port                                     | `4000`         |
+| `BUSINESS_TIMEZONE` | IANA zone for business hours                 | `Asia/Kolkata` |
+| `RATE_LIMIT_MAX`    | GraphQL requests per minute per IP           | `240`          |
+| `LOG_LEVEL`         | Log verbosity: `debug`/`info`/`warn`/`error` | `info`         |
 
 ## Migrations
 
@@ -214,3 +215,24 @@ mutation Move($ticketId: ID!) {
 ```
 
 All operations except `register`/`login` require the bearer token. Errors surface as GraphQL errors with machine-readable `extensions.code` (`VALIDATION_ERROR`, `TICKET_NOT_FOUND`, `UNAUTHORIZED`, `FORBIDDEN`, `INVALID_STATUS_TRANSITION`, `INVALID_COMMENT`, …). The endpoint is rate-limited per IP (`429 RATE_LIMITED`).
+
+## Observability
+
+The API emits structured JSON logs to stdout, one line per event, ready for collection by any log pipeline:
+
+```json
+{
+  "time": "2026-08-25T10:00:00.000Z",
+  "level": "info",
+  "msg": "request",
+  "method": "POST",
+  "path": "/graphql",
+  "ip": "::1",
+  "status": 200,
+  "durationMs": 12
+}
+```
+
+- Every HTTP request is logged on response finish with method, path (query string stripped), client IP, status, and duration in milliseconds.
+- Levels escalate automatically: `>=500` logs as `error`, `>=400` as `warn`, otherwise `info`.
+- `LOG_LEVEL` filters verbosity (`debug` adds noise; `error` keeps only failures).
