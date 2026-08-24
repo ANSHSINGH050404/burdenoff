@@ -1,5 +1,5 @@
 export type Role = 'REPORTER' | 'AGENT';
-export type Status = 'OPEN' | 'IN_PROGRESS' | 'RESOLVED' | 'CLOSED';
+export type Status = 'OPEN' | 'IN_PROGRESS' | 'WAITING_ON_CUSTOMER' | 'RESOLVED' | 'CLOSED';
 export type Priority = 'URGENT' | 'HIGH' | 'MEDIUM' | 'LOW';
 export type SlaState = 'ON_TRACK' | 'AT_RISK' | 'BREACHED';
 
@@ -70,6 +70,12 @@ export type TicketFilters = {
   slaState?: SlaState;
 };
 
-export const STATUSES: Status[] = ['OPEN', 'IN_PROGRESS', 'RESOLVED', 'CLOSED'];
+export const STATUSES: Status[] = [
+  'OPEN',
+  'IN_PROGRESS',
+  'WAITING_ON_CUSTOMER',
+  'RESOLVED',
+  'CLOSED',
+];
 export const PRIORITIES: Priority[] = ['URGENT', 'HIGH', 'MEDIUM', 'LOW'];
 export const SLA_STATES: SlaState[] = ['ON_TRACK', 'AT_RISK', 'BREACHED'];
