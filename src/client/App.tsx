@@ -38,6 +38,21 @@ export function App() {
   const [filters, setFilters] = useState<TicketFilters>({});
   const [sort, setSort] = useState('newest');
   const [page, setPage] = useState<ConnectionPage>();
+  const [, setTick] = useState(0);
+  const [lastUpdated, setLastUpdated] = useState<number>();
+
+  useEffect(() => {
+    const id = setInterval(() => setTick((value) => value + 1), 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  useEffect(() => {
+    if (!token) return;
+    // Poll periodically so SLA state and countdowns stay live; the API
+    // remains the only source of truth for breach/risk calculations.
+    const id = setInterval(() => void refresh(), 30_000);
+    return () => clearInterval(id);
+  }, [token]);
 
   async function refresh() {
     try {
@@ -61,6 +76,7 @@ export function App() {
       setUsers(people.users);
       setHolidays(days.holidays);
       if (perf) setAgentStats(perf.agentStats);
+      setLastUpdated(Date.now());
     } catch (caught) {
       setError(caught instanceof Error ? caught.message : 'LOAD_FAILED');
     }
@@ -120,6 +136,11 @@ export function App() {
           <h1 className="text-2xl font-black">Operations desk</h1>
         </div>
         <div className="flex items-center gap-3 text-sm">
+          {lastUpdated !== undefined && (
+            <small className="text-stone-400">
+              Updated {Math.max(0, Math.floor((Date.now() - lastUpdated) / 1000))}s ago
+            </small>
+          )}
           <span className="font-semibold text-stone-600">{me.name}</span>
           <button
             onClick={() => {
