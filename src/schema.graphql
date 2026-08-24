@@ -108,6 +108,13 @@ type Dashboard {
   closed: Int!
   breached: Int!
 }
+type AgentStat {
+  agent: User!
+  assignedTickets: Int!
+  openAssigned: Int!
+  resolvedTickets: Int!
+  avgFirstResponseBusinessMinutes: Float!
+}
 type AuthPayload {
   token: String!
   user: User!
@@ -131,6 +138,7 @@ type Query {
   ): TicketConnection!
   ticket(id: ID!): Ticket
   dashboard: Dashboard!
+  agentStats: [AgentStat!]!
   users(role: UserRole): [User!]!
   holidays: [Holiday!]!
 }

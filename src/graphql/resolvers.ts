@@ -26,6 +26,10 @@ export function createResolvers(db: PrismaClient, clock: () => Date = () => new 
       ticketQueries.get(currentUser(context), args.id),
     dashboard: (_parent: unknown, _args: Record<string, never>, context: Context) =>
       ticketQueries.dashboard(currentUser(context)),
+    agentStats: (_parent: unknown, _args: Record<string, never>, context: Context) => {
+      requireAgent(context);
+      return ticketQueries.agentStats();
+    },
     users: (_parent: unknown, args: { role?: Role }, context: Context) => {
       currentUser(context);
       return db.user.findMany({

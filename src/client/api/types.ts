@@ -51,6 +51,14 @@ export type Dashboard = {
   breached: number;
 };
 
+export type AgentStat = {
+  agent: User;
+  assignedTickets: number;
+  openAssigned: number;
+  resolvedTickets: number;
+  avgFirstResponseBusinessMinutes: number;
+};
+
 export type ConnectionPage = { hasNextPage: boolean; endCursor?: string };
 
 export type Holiday = { id: string; date: string; name: string };

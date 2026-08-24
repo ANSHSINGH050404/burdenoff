@@ -2,8 +2,10 @@ import { gqlError } from '../../errors';
 import type { Priority, PrismaClient, TicketStatus } from '@prisma/client';
 import type { TicketRecord } from '../../repositories/ticket.repository';
 import { ticketRepository as tickets } from '../../repositories/ticket.repository';
+import { userRepository as users } from '../../repositories/user.repository';
 import type { AuthUser } from '../auth/guards';
 import { holidayDates } from '../holiday/holiday.service';
+import { remainingBusinessMinutes } from '../sla/engine';
 import { computeSlaInfo, type SlaInfo } from '../sla/presenter';
 
 type Clock = () => Date;
@@ -107,6 +109,33 @@ export function createTicketQueryService(db: PrismaClient, clock: Clock) {
         closed: counts.CLOSED,
         breached,
       };
+    },
+
+    async agentStats() {
+      const [agents, rows, holidays] = await Promise.all([
+        users.list(db, 'AGENT'),
+        tickets.findMany(db, {}),
+        holidayDates(db),
+      ]);
+      return agents.map((agent) => {
+        const mine = rows.filter((row) => row.assigneeId === agent.id);
+        const responded = mine.filter((row) => row.firstResponseAt !== null);
+        const totalFirstResponse = responded.reduce(
+          (sum, row) =>
+            sum + remainingBusinessMinutes(row.createdAt, row.firstResponseAt!, holidays),
+          0,
+        );
+        const active: TicketStatus[] = ['OPEN', 'IN_PROGRESS', 'WAITING_ON_CUSTOMER'];
+        return {
+          agent,
+          assignedTickets: mine.length,
+          openAssigned: mine.filter((row) => active.includes(row.status)).length,
+          resolvedTickets: mine.filter((row) => row.resolvedAt !== null).length,
+          avgFirstResponseBusinessMinutes: responded.length
+            ? Math.round((totalFirstResponse / responded.length) * 10) / 10
+            : 0,
+        };
+      });
     },
   };
 }
