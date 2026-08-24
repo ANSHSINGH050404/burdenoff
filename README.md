@@ -1,6 +1,6 @@
 # BurdenOff
 
-A minimal support-ticket service built with Bun, TypeScript, GraphQL Yoga, Prisma/PostgreSQL, and React/Vite.
+A support-ticket service built with Bun, TypeScript, GraphQL Yoga, Prisma/PostgreSQL, and a React/Vite frontend styled with Tailwind CSS.
 
 ## Run locally
 
