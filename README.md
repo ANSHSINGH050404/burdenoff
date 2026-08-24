@@ -47,7 +47,9 @@ Resolvers only authenticate, shape arguments, and delegate; authorization guards
 
 ## Rules
 
-Registration always creates a reporter. Agents are provisioned administratively/through the seed. Reporters see their own tickets; agents see all tickets and active users. The legal transitions are `OPEN -> IN_PROGRESS`, `IN_PROGRESS -> OPEN/RESOLVED`, `RESOLVED -> CLOSED`; closed tickets are terminal and only resolved tickets can be reopened. Reopening starts a new resolution attempt without changing original SLA deadlines.
+Registration always creates a reporter. Agents are provisioned administratively/through the seed. Reporters see their own tickets; agents see all tickets and active users. The legal transitions are `OPEN -> IN_PROGRESS/WAITING_ON_CUSTOMER`, `IN_PROGRESS -> OPEN/RESOLVED/WAITING_ON_CUSTOMER`, `WAITING_ON_CUSTOMER -> OPEN/IN_PROGRESS`, `RESOLVED -> CLOSED`; closed tickets are terminal and only resolved tickets can be reopened. Reopening starts a new resolution attempt without changing original SLA deadlines.
+
+While a ticket is `WAITING_ON_CUSTOMER` both SLA clocks are frozen: on resume, each still-active clock is restarted from the resume instant with exactly the business time it had left when paused (weekends/holidays inside the pause never count).
 
 Business hours are 09:00-18:00 on weekdays in `Asia/Kolkata` by default. Holidays are date-only records. SLA state is calculated at read time; completed work uses event timestamps while the enum remains `ON_TRACK`, `AT_RISK`, or `BREACHED`.
 

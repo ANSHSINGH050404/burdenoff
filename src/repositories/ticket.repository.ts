@@ -17,6 +17,9 @@ export type TicketCore = {
   reporterId: string;
   status: TicketStatus;
   firstResponseAt: Date | null;
+  resolvedAt: Date | null;
+  pausedAt: Date | null;
+  responseDeadline: Date;
   resolutionDeadline: Date;
 };
 
@@ -30,17 +33,19 @@ export type StatusCounts = {
 
 export const ticketRepository = {
   async findCoreById(db: Database, id: string): Promise<TicketCore | null> {
-    const ticket = await db.ticket.findUnique({
+    return db.ticket.findUnique({
       where: { id },
       select: {
         id: true,
         reporterId: true,
         status: true,
         firstResponseAt: true,
+        resolvedAt: true,
+        pausedAt: true,
+        responseDeadline: true,
         resolutionDeadline: true,
       },
     });
-    return ticket;
   },
   findFullById(db: Database, id: string): Promise<TicketRecord | null> {
     return db.ticket.findUnique({ where: { id }, include: ticketInclude });
@@ -83,7 +88,13 @@ export const ticketRepository = {
   updateStatus(
     db: Database,
     ticketId: string,
-    data: { status: TicketStatus; resolvedAt?: Date | null },
+    data: {
+      status: TicketStatus;
+      resolvedAt?: Date | null;
+      pausedAt?: Date | null;
+      responseDeadline?: Date;
+      resolutionDeadline?: Date;
+    },
   ): Promise<TicketRecord> {
     return db.ticket.update({ where: { id: ticketId }, data, include: ticketInclude });
   },

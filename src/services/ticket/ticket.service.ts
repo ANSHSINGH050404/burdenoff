@@ -7,7 +7,7 @@ import { userRepository as users } from '../../repositories/user.repository';
 import { requireText } from '../../validation/validation';
 import type { AuthUser } from '../auth/guards';
 import { holidayDates } from '../holiday/holiday.service';
-import { calculateDeadlines } from '../sla/engine';
+import { addBusinessMinutes, calculateDeadlines, remainingBusinessMinutes } from '../sla/engine';
 import { validTransition } from './transitions';
 
 type Clock = () => Date;
@@ -98,10 +98,54 @@ export function createTicketService(db: PrismaClient, clock: Clock) {
     ): Promise<TicketRecord> {
       return db.$transaction(async (tx) => {
         const now = clock();
-        const updated = await tickets.updateStatus(tx, ticketId, {
-          status: to,
-          resolvedAt: to === 'RESOLVED' ? now : undefined,
-        });
+        const current = await tickets.findCoreById(tx, ticketId);
+        if (!current) throw gqlError('TICKET_NOT_FOUND');
+
+        const data: {
+          status: TicketStatus;
+          resolvedAt?: Date;
+          pausedAt?: Date | null;
+          responseDeadline?: Date;
+          resolutionDeadline?: Date;
+        } = { status: to };
+
+        if (to === 'WAITING_ON_CUSTOMER') {
+          // Freeze both clocks by recording the pause instant.
+          if (!current.pausedAt) data.pausedAt = now;
+        } else if (from === 'WAITING_ON_CUSTOMER' && current.pausedAt) {
+          // Resume: give each still-active clock back the business time
+          // that was remaining when the pause started, counted from now.
+          const holidays = await holidayDates(tx);
+          data.pausedAt = null;
+          if (!current.firstResponseAt && current.responseDeadline > current.pausedAt) {
+            const firstResponseRemaining = remainingBusinessMinutes(
+              current.pausedAt,
+              current.responseDeadline,
+              holidays,
+            );
+            data.responseDeadline = addBusinessMinutes(now, firstResponseRemaining, holidays);
+          }
+          if (!current.resolvedAt && current.resolutionDeadline > current.pausedAt) {
+            const resolutionRemaining = remainingBusinessMinutes(
+              current.pausedAt,
+              current.resolutionDeadline,
+              holidays,
+            );
+            data.resolutionDeadline = addBusinessMinutes(now, resolutionRemaining, holidays);
+          }
+        }
+
+        if (to === 'RESOLVED') data.resolvedAt = now;
+
+        const updated = await tickets.updateStatus(tx, ticketId, data);
+
+        if (from === 'WAITING_ON_CUSTOMER' && !current.resolvedAt && data.resolutionDeadline) {
+          await tx.resolutionAttempt.updateMany({
+            where: { ticketId, resolvedAt: null },
+            data: { dueAt: updated.resolutionDeadline },
+          });
+        }
+
         await tickets.createEvent(tx, {
           ticketId,
           actorId: user.id,
@@ -123,6 +167,7 @@ export function createTicketService(db: PrismaClient, clock: Clock) {
         const updated = await tickets.updateStatus(tx, ticketId, {
           status: 'OPEN',
           resolvedAt: null,
+          pausedAt: null,
         });
         await tickets.createResolutionAttempt(tx, ticketId, ticket.resolutionDeadline);
         await tickets.createEvent(tx, {
