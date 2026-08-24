@@ -22,7 +22,7 @@ type Query {
   holidays: [Holiday!]!
 }
 type Mutation {
-  createTicket(title: String!, description: String!, priority: Priority = MEDIUM): Ticket!
+  createTicket(title: String!, description: String!, priority: Priority!): Ticket!
   assignTicket(ticketId: ID!, assigneeId: ID!): Ticket!
   changeTicketStatus(ticketId: ID!, status: TicketStatus!): Ticket!
   addComment(ticketId: ID!, content: String!): Comment!
