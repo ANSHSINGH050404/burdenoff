@@ -1,10 +1,57 @@
 import { describe, expect, test } from 'bun:test';
-import { addBusinessMinutes, calculateDeadlines, remainingBusinessMinutes, slaState, SLA_POLICY, validTransition } from '../src/domain/sla';
+import {
+  addBusinessMinutes,
+  calculateDeadlines,
+  remainingBusinessMinutes,
+  slaState,
+  SLA_POLICY,
+  validTransition,
+} from '../src/domain/sla';
 describe('business-hour SLA', () => {
-  test('uses nine-hour weekdays and skips holidays', () => { const start = new Date('2026-08-21T09:00:00Z'); const result = addBusinessMinutes(start, 16 * 60, new Set(['2026-08-24']), 'UTC'); expect(result.toISOString()).toBe('2026-08-25T16:00:00.000Z'); });
-  test('implements every priority policy', () => { expect(SLA_POLICY.URGENT).toEqual({ response: 60, resolution: 240 }); expect(SLA_POLICY.HIGH).toEqual({ response: 240, resolution: 1440 }); expect(SLA_POLICY.MEDIUM).toEqual({ response: 480, resolution: 2880 }); expect(SLA_POLICY.LOW).toEqual({ response: 1440, resolution: 4320 }); });
-  test('calculates persisted deadlines from selected priority', () => { const result = calculateDeadlines(new Date('2026-08-21T09:00:00Z'), 'URGENT', new Set(), 'UTC'); expect(result.response.toISOString()).toBe('2026-08-21T10:00:00.000Z'); });
-  test('marks exactly over 75 percent at risk and freezes completed state', () => { const start = new Date('2026-08-21T09:00:00Z'); const deadline = new Date('2026-08-21T18:00:00Z'); expect(remainingBusinessMinutes(start, deadline, new Set(), 'UTC')).toBe(540); expect(slaState(start, deadline, new Date('2026-08-21T15:46:00Z'), new Set(), null, 'UTC')).toBe('AT_RISK'); expect(slaState(start, deadline, new Date('2026-08-22T10:00:00Z'), new Set(), new Date('2026-08-21T17:00:00Z'), 'UTC')).toBe('ON_TRACK'); });
-  test('handles DST through timezone conversion', () => { const start = new Date('2026-03-06T14:00:00Z'); const due = addBusinessMinutes(start, 10 * 60, new Set(), 'America/New_York'); expect(due.toISOString()).toBe('2026-03-09T14:00:00.000Z'); });
-  test('allows only the specified transitions and keeps closed terminal', () => { expect(validTransition('OPEN', 'IN_PROGRESS')).toBe(true); expect(validTransition('IN_PROGRESS', 'OPEN')).toBe(true); expect(validTransition('IN_PROGRESS', 'RESOLVED')).toBe(true); expect(validTransition('RESOLVED', 'CLOSED')).toBe(true); expect(validTransition('OPEN', 'RESOLVED')).toBe(false); expect(validTransition('CLOSED', 'OPEN')).toBe(false); });
+  test('uses nine-hour weekdays and skips holidays', () => {
+    const start = new Date('2026-08-21T09:00:00Z');
+    const result = addBusinessMinutes(start, 16 * 60, new Set(['2026-08-24']), 'UTC');
+    expect(result.toISOString()).toBe('2026-08-25T16:00:00.000Z');
+  });
+  test('implements every priority policy', () => {
+    expect(SLA_POLICY.URGENT).toEqual({ response: 60, resolution: 240 });
+    expect(SLA_POLICY.HIGH).toEqual({ response: 240, resolution: 1440 });
+    expect(SLA_POLICY.MEDIUM).toEqual({ response: 480, resolution: 2880 });
+    expect(SLA_POLICY.LOW).toEqual({ response: 1440, resolution: 4320 });
+  });
+  test('calculates persisted deadlines from selected priority', () => {
+    const result = calculateDeadlines(new Date('2026-08-21T09:00:00Z'), 'URGENT', new Set(), 'UTC');
+    expect(result.response.toISOString()).toBe('2026-08-21T10:00:00.000Z');
+  });
+  test('marks exactly over 75 percent at risk and freezes completed state', () => {
+    const start = new Date('2026-08-21T09:00:00Z');
+    const deadline = new Date('2026-08-21T18:00:00Z');
+    expect(remainingBusinessMinutes(start, deadline, new Set(), 'UTC')).toBe(540);
+    expect(
+      slaState(start, deadline, new Date('2026-08-21T15:46:00Z'), new Set(), null, 'UTC'),
+    ).toBe('AT_RISK');
+    expect(
+      slaState(
+        start,
+        deadline,
+        new Date('2026-08-22T10:00:00Z'),
+        new Set(),
+        new Date('2026-08-21T17:00:00Z'),
+        'UTC',
+      ),
+    ).toBe('ON_TRACK');
+  });
+  test('handles DST through timezone conversion', () => {
+    const start = new Date('2026-03-06T14:00:00Z');
+    const due = addBusinessMinutes(start, 10 * 60, new Set(), 'America/New_York');
+    expect(due.toISOString()).toBe('2026-03-09T14:00:00.000Z');
+  });
+  test('allows only the specified transitions and keeps closed terminal', () => {
+    expect(validTransition('OPEN', 'IN_PROGRESS')).toBe(true);
+    expect(validTransition('IN_PROGRESS', 'OPEN')).toBe(true);
+    expect(validTransition('IN_PROGRESS', 'RESOLVED')).toBe(true);
+    expect(validTransition('RESOLVED', 'CLOSED')).toBe(true);
+    expect(validTransition('OPEN', 'RESOLVED')).toBe(false);
+    expect(validTransition('CLOSED', 'OPEN')).toBe(false);
+  });
 });

@@ -1,52 +1,451 @@
 import { GraphQLError, GraphQLScalarType, Kind } from 'graphql';
 import { Prisma, PrismaClient, Role, TicketStatus, Priority, EventType } from '@prisma/client';
 import bcrypt from 'bcryptjs';
-import { calculateDeadlines, localDate, remainingBusinessMinutes, slaState, validTransition, type SlaState } from '../domain/sla';
+import {
+  calculateDeadlines,
+  localDate,
+  remainingBusinessMinutes,
+  slaState,
+  validTransition,
+  type SlaState,
+} from '../domain/sla';
 import { sign, type AuthUser } from '../context';
 
 export type Context = { user?: AuthUser };
 type Resolver = (parent: unknown, args: unknown, context: Context) => unknown | Promise<unknown>;
-type TicketArgs = { id?: string; status?: TicketStatus; priority?: Priority; assigneeId?: string; slaState?: SlaState; take?: number; cursor?: string; filter?: { status?: TicketStatus; priority?: Priority; assigneeId?: string; slaState?: SlaState } };
+type TicketArgs = {
+  id?: string;
+  status?: TicketStatus;
+  priority?: Priority;
+  assigneeId?: string;
+  slaState?: SlaState;
+  take?: number;
+  cursor?: string;
+  filter?: { status?: TicketStatus; priority?: Priority; assigneeId?: string; slaState?: SlaState };
+};
 type CreateArgs = { title: string; description: string; priority?: Priority };
 type IdArgs = { ticketId: string };
 type AssignArgs = { ticketId: string; assigneeId: string };
 type CommentArgs = { ticketId: string; content: string };
 type AuthArgs = { email: string; name: string; password: string; role?: Role };
-type TicketParent = Prisma.TicketGetPayload<{ include: { reporter: true; assignee: true; comments: { include: { author: true } }; resolutionAttempts: true } }>;
+type TicketParent = Prisma.TicketGetPayload<{
+  include: {
+    reporter: true;
+    assignee: true;
+    comments: { include: { author: true } };
+    resolutionAttempts: true;
+  };
+}>;
 type CommentParent = Prisma.CommentGetPayload<{ include: { author: true } }>;
 type Transaction = Prisma.TransactionClient;
-const ticketInclude = { reporter: true, assignee: true, comments: { include: { author: true }, orderBy: { createdAt: 'asc' as const } }, resolutionAttempts: { orderBy: { startedAt: 'asc' as const } } } as const;
+const ticketInclude = {
+  reporter: true,
+  assignee: true,
+  comments: { include: { author: true }, orderBy: { createdAt: 'asc' as const } },
+  resolutionAttempts: { orderBy: { startedAt: 'asc' as const } },
+} as const;
 const error = (code: string): GraphQLError => new GraphQLError(code, { extensions: { code } });
-const current = (context: Context): AuthUser => context.user ?? (() => { throw error('UNAUTHENTICATED'); })();
-const agent = (context: Context): AuthUser => { const user = current(context); if (user.role !== Role.AGENT) throw error('FORBIDDEN'); return user; };
+const current = (context: Context): AuthUser =>
+  context.user ??
+  (() => {
+    throw error('UNAUTHENTICATED');
+  })();
+const agent = (context: Context): AuthUser => {
+  const user = current(context);
+  if (user.role !== Role.AGENT) throw error('FORBIDDEN');
+  return user;
+};
 const argsOf = <T>(args: unknown): T => args as T;
 const encode = (id: string): string => Buffer.from(id).toString('base64url');
 const decode = (cursor: string): string => Buffer.from(cursor, 'base64url').toString();
-async function holidays(db: PrismaClient | Transaction): Promise<Set<string>> { return new Set((await db.holiday.findMany()).map(holiday => localDate(holiday.date))); }
-async function loadTicket(db: PrismaClient | Transaction, id: string): Promise<TicketParent> { const ticket = await db.ticket.findUnique({ where: { id }, include: ticketInclude }); if (!ticket) throw error('TICKET_NOT_FOUND'); return ticket; }
-async function findRequired(db: PrismaClient, id: string): Promise<Prisma.TicketGetPayload<{ select: { id: true; reporterId: true; status: true; firstResponseAt: true; resolutionDeadline: true } }>> { const ticket = await db.ticket.findUnique({ where: { id } }); if (!ticket) throw error('TICKET_NOT_FOUND'); return ticket; }
-function allowedTicket(ticket: { reporterId: string }, user: AuthUser): boolean { return user.role === Role.AGENT || ticket.reporterId === user.id; }
-function ticketWhere(user: AuthUser, args: TicketArgs): Prisma.TicketWhereInput { const filter = args.filter ?? args; return { ...(user.role === Role.REPORTER ? { reporterId: user.id } : {}), ...(args.id ? { id: args.id } : {}), ...(filter.status ? { status: filter.status } : {}), ...(filter.priority ? { priority: filter.priority } : {}), ...(filter.assigneeId ? { assigneeId: filter.assigneeId } : {}) }; }
+async function holidays(db: PrismaClient | Transaction): Promise<Set<string>> {
+  return new Set((await db.holiday.findMany()).map((holiday) => localDate(holiday.date)));
+}
+async function loadTicket(db: PrismaClient | Transaction, id: string): Promise<TicketParent> {
+  const ticket = await db.ticket.findUnique({ where: { id }, include: ticketInclude });
+  if (!ticket) throw error('TICKET_NOT_FOUND');
+  return ticket;
+}
+async function findRequired(
+  db: PrismaClient,
+  id: string,
+): Promise<
+  Prisma.TicketGetPayload<{
+    select: {
+      id: true;
+      reporterId: true;
+      status: true;
+      firstResponseAt: true;
+      resolutionDeadline: true;
+    };
+  }>
+> {
+  const ticket = await db.ticket.findUnique({ where: { id } });
+  if (!ticket) throw error('TICKET_NOT_FOUND');
+  return ticket;
+}
+function allowedTicket(ticket: { reporterId: string }, user: AuthUser): boolean {
+  return user.role === Role.AGENT || ticket.reporterId === user.id;
+}
+function ticketWhere(user: AuthUser, args: TicketArgs): Prisma.TicketWhereInput {
+  const filter = args.filter ?? args;
+  return {
+    ...(user.role === Role.REPORTER ? { reporterId: user.id } : {}),
+    ...(args.id ? { id: args.id } : {}),
+    ...(filter.status ? { status: filter.status } : {}),
+    ...(filter.priority ? { priority: filter.priority } : {}),
+    ...(filter.assigneeId ? { assigneeId: filter.assigneeId } : {}),
+  };
+}
 export function createResolvers(db: PrismaClient, clock: () => Date = () => new Date()) {
-  const dateTime = new GraphQLScalarType<Date, string>({ name: 'DateTime', serialize: value => value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString(), parseValue: value => new Date(String(value)), parseLiteral: node => { if (node.kind !== Kind.STRING) throw error('INVALID_DATETIME'); return new Date(node.value); } });
-  const getSla = async (ticket: TicketParent): Promise<{ firstResponseDueAt: Date; resolutionDueAt: Date; firstResponseState: SlaState; resolutionState: SlaState; firstResponseRemainingMinutes: number; resolutionRemainingMinutes: number }> => { const set = await holidays(db); const now = clock(); const timezone = process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata'; return { firstResponseDueAt: ticket.responseDeadline, resolutionDueAt: ticket.resolutionDeadline, firstResponseState: slaState(ticket.createdAt, ticket.responseDeadline, now, set, ticket.firstResponseAt, timezone), resolutionState: slaState(ticket.createdAt, ticket.resolutionDeadline, now, set, ticket.resolvedAt, timezone), firstResponseRemainingMinutes: ticket.firstResponseAt ? 0 : remainingBusinessMinutes(now, ticket.responseDeadline, set, timezone), resolutionRemainingMinutes: ticket.resolvedAt ? 0 : remainingBusinessMinutes(now, ticket.resolutionDeadline, set, timezone) }; };
+  const dateTime = new GraphQLScalarType<Date, string>({
+    name: 'DateTime',
+    serialize: (value) =>
+      value instanceof Date ? value.toISOString() : new Date(String(value)).toISOString(),
+    parseValue: (value) => new Date(String(value)),
+    parseLiteral: (node) => {
+      if (node.kind !== Kind.STRING) throw error('INVALID_DATETIME');
+      return new Date(node.value);
+    },
+  });
+  const getSla = async (
+    ticket: TicketParent,
+  ): Promise<{
+    firstResponseDueAt: Date;
+    resolutionDueAt: Date;
+    firstResponseState: SlaState;
+    resolutionState: SlaState;
+    firstResponseRemainingMinutes: number;
+    resolutionRemainingMinutes: number;
+  }> => {
+    const set = await holidays(db);
+    const now = clock();
+    const timezone = process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata';
+    return {
+      firstResponseDueAt: ticket.responseDeadline,
+      resolutionDueAt: ticket.resolutionDeadline,
+      firstResponseState: slaState(
+        ticket.createdAt,
+        ticket.responseDeadline,
+        now,
+        set,
+        ticket.firstResponseAt,
+        timezone,
+      ),
+      resolutionState: slaState(
+        ticket.createdAt,
+        ticket.resolutionDeadline,
+        now,
+        set,
+        ticket.resolvedAt,
+        timezone,
+      ),
+      firstResponseRemainingMinutes: ticket.firstResponseAt
+        ? 0
+        : remainingBusinessMinutes(now, ticket.responseDeadline, set, timezone),
+      resolutionRemainingMinutes: ticket.resolvedAt
+        ? 0
+        : remainingBusinessMinutes(now, ticket.resolutionDeadline, set, timezone),
+    };
+  };
   const mutations: Record<string, Resolver> = {
-    register: async (_parent, raw) => { const args = argsOf<AuthArgs>(raw); if (args.role === Role.AGENT) throw error('FORBIDDEN'); const passwordHash = await bcrypt.hash(args.password, 12); try { const user = await db.user.create({ data: { email: args.email, name: args.name, passwordHash, role: Role.REPORTER } }); return { user, token: sign({ id: user.id, email: user.email, role: user.role }) }; } catch { throw error('EMAIL_ALREADY_REGISTERED'); } },
-    login: async (_parent, raw) => { const args = argsOf<AuthArgs>(raw); const user = await db.user.findUnique({ where: { email: args.email } }); if (!user || !(await bcrypt.compare(args.password, user.passwordHash))) throw error('INVALID_CREDENTIALS'); return { user, token: sign({ id: user.id, email: user.email, role: user.role }) }; },
-    createTicket: async (_parent, raw, context) => { const user = current(context); const args = argsOf<CreateArgs>(raw); const title = args.title.trim(); const description = args.description.trim(); if (title.length === 0 || title.length > 200 || description.length === 0 || description.length > 10000) throw error('VALIDATION_ERROR'); const priority = args.priority ?? Priority.MEDIUM; const deadlines = calculateDeadlines(clock(), priority, await holidays(db), process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata'); return db.$transaction(async tx => { const ticket = await tx.ticket.create({ data: { title, description, priority, reporterId: user.id, responseDeadline: deadlines.response, resolutionDeadline: deadlines.resolution, resolutionAttempts: { create: { dueAt: deadlines.resolution } } }, include: ticketInclude }); await tx.ticketEvent.create({ data: { ticketId: ticket.id, actorId: user.id, type: EventType.CREATED } }); return ticket; }); },
-    assignTicket: async (_parent, raw, context) => { const user = agent(context); const args = argsOf<AssignArgs>(raw); const assignee = await db.user.findUnique({ where: { id: args.assigneeId } }); if (!assignee || assignee.role !== Role.AGENT) throw error('INVALID_ASSIGNEE'); const ticket = await findRequired(db, args.ticketId); if (ticket.status === TicketStatus.CLOSED) throw error('CLOSED_TICKET'); return db.ticket.update({ where: { id: args.ticketId }, data: { assigneeId: assignee.id }, include: ticketInclude }).then(async updated => { await db.ticketEvent.create({ data: { ticketId: updated.id, actorId: user.id, type: EventType.STATUS_CHANGED, body: `Assigned to ${assignee.name}` } }); return updated; }); },
-    changeTicketStatus: async (_parent, raw, context) => { const user = agent(context); const args = argsOf<IdArgs & { status: TicketStatus }>(raw); const ticket = await findRequired(db, args.ticketId); if (!validTransition(ticket.status, args.status)) throw error('INVALID_STATUS_TRANSITION'); return changeStatus(db, user, ticket, args.status); },
-    resolveTicket: async (_parent, raw, context) => { const user = agent(context); const args = argsOf<IdArgs>(raw); const ticket = await findRequired(db, args.ticketId); if (!validTransition(ticket.status, TicketStatus.RESOLVED)) throw error('INVALID_STATUS_TRANSITION'); return changeStatus(db, user, ticket, TicketStatus.RESOLVED); },
-    reopenTicket: async (_parent, raw, context) => { const user = agent(context); const args = argsOf<IdArgs>(raw); const ticket = await findRequired(db, args.ticketId); if (ticket.status !== TicketStatus.RESOLVED) throw error('INVALID_REOPEN'); return db.$transaction(async tx => { const updated = await tx.ticket.update({ where: { id: ticket.id }, data: { status: TicketStatus.OPEN, resolvedAt: null }, include: ticketInclude }); await tx.resolutionAttempt.create({ data: { ticketId: ticket.id, dueAt: ticket.resolutionDeadline } }); await tx.ticketEvent.create({ data: { ticketId: ticket.id, actorId: user.id, type: EventType.REOPENED, fromStatus: ticket.status, toStatus: TicketStatus.OPEN } }); return updated; }); },
-    addComment: async (_parent, raw, context) => { const user = current(context); const args = argsOf<CommentArgs>(raw); const ticket = await findRequired(db, args.ticketId); if (!allowedTicket(ticket, user) || ticket.status === TicketStatus.CLOSED) throw error('COMMENT_NOT_ALLOWED'); return db.$transaction(async tx => { const comment = await tx.comment.create({ data: { ticketId: ticket.id, authorId: user.id, content: args.content }, include: { author: true } }); const firstResponseAt = user.role === Role.AGENT && ticket.firstResponseAt === null ? comment.createdAt : undefined; if (firstResponseAt) await tx.ticket.update({ where: { id: ticket.id }, data: { firstResponseAt } }); await tx.ticketEvent.create({ data: { ticketId: ticket.id, actorId: user.id, type: user.role === Role.AGENT && ticket.firstResponseAt === null ? EventType.FIRST_RESPONSE : EventType.COMMENT, body: args.content } }); return comment; }); }
+    register: async (_parent, raw) => {
+      const args = argsOf<AuthArgs>(raw);
+      if (args.role === Role.AGENT) throw error('FORBIDDEN');
+      const passwordHash = await bcrypt.hash(args.password, 12);
+      try {
+        const user = await db.user.create({
+          data: { email: args.email, name: args.name, passwordHash, role: Role.REPORTER },
+        });
+        return { user, token: sign({ id: user.id, email: user.email, role: user.role }) };
+      } catch {
+        throw error('EMAIL_ALREADY_REGISTERED');
+      }
+    },
+    login: async (_parent, raw) => {
+      const args = argsOf<AuthArgs>(raw);
+      const user = await db.user.findUnique({ where: { email: args.email } });
+      if (!user || !(await bcrypt.compare(args.password, user.passwordHash)))
+        throw error('INVALID_CREDENTIALS');
+      return { user, token: sign({ id: user.id, email: user.email, role: user.role }) };
+    },
+    createTicket: async (_parent, raw, context) => {
+      const user = current(context);
+      const args = argsOf<CreateArgs>(raw);
+      const title = args.title.trim();
+      const description = args.description.trim();
+      if (
+        title.length === 0 ||
+        title.length > 200 ||
+        description.length === 0 ||
+        description.length > 10000
+      )
+        throw error('VALIDATION_ERROR');
+      const priority = args.priority ?? Priority.MEDIUM;
+      const deadlines = calculateDeadlines(
+        clock(),
+        priority,
+        await holidays(db),
+        process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata',
+      );
+      return db.$transaction(async (tx) => {
+        const ticket = await tx.ticket.create({
+          data: {
+            title,
+            description,
+            priority,
+            reporterId: user.id,
+            responseDeadline: deadlines.response,
+            resolutionDeadline: deadlines.resolution,
+            resolutionAttempts: { create: { dueAt: deadlines.resolution } },
+          },
+          include: ticketInclude,
+        });
+        await tx.ticketEvent.create({
+          data: { ticketId: ticket.id, actorId: user.id, type: EventType.CREATED },
+        });
+        return ticket;
+      });
+    },
+    assignTicket: async (_parent, raw, context) => {
+      const user = agent(context);
+      const args = argsOf<AssignArgs>(raw);
+      const assignee = await db.user.findUnique({ where: { id: args.assigneeId } });
+      if (!assignee || assignee.role !== Role.AGENT) throw error('INVALID_ASSIGNEE');
+      const ticket = await findRequired(db, args.ticketId);
+      if (ticket.status === TicketStatus.CLOSED) throw error('CLOSED_TICKET');
+      return db.ticket
+        .update({
+          where: { id: args.ticketId },
+          data: { assigneeId: assignee.id },
+          include: ticketInclude,
+        })
+        .then(async (updated) => {
+          await db.ticketEvent.create({
+            data: {
+              ticketId: updated.id,
+              actorId: user.id,
+              type: EventType.STATUS_CHANGED,
+              body: `Assigned to ${assignee.name}`,
+            },
+          });
+          return updated;
+        });
+    },
+    changeTicketStatus: async (_parent, raw, context) => {
+      const user = agent(context);
+      const args = argsOf<IdArgs & { status: TicketStatus }>(raw);
+      const ticket = await findRequired(db, args.ticketId);
+      if (!validTransition(ticket.status, args.status)) throw error('INVALID_STATUS_TRANSITION');
+      return changeStatus(db, user, ticket, args.status);
+    },
+    resolveTicket: async (_parent, raw, context) => {
+      const user = agent(context);
+      const args = argsOf<IdArgs>(raw);
+      const ticket = await findRequired(db, args.ticketId);
+      if (!validTransition(ticket.status, TicketStatus.RESOLVED))
+        throw error('INVALID_STATUS_TRANSITION');
+      return changeStatus(db, user, ticket, TicketStatus.RESOLVED);
+    },
+    reopenTicket: async (_parent, raw, context) => {
+      const user = agent(context);
+      const args = argsOf<IdArgs>(raw);
+      const ticket = await findRequired(db, args.ticketId);
+      if (ticket.status !== TicketStatus.RESOLVED) throw error('INVALID_REOPEN');
+      return db.$transaction(async (tx) => {
+        const updated = await tx.ticket.update({
+          where: { id: ticket.id },
+          data: { status: TicketStatus.OPEN, resolvedAt: null },
+          include: ticketInclude,
+        });
+        await tx.resolutionAttempt.create({
+          data: { ticketId: ticket.id, dueAt: ticket.resolutionDeadline },
+        });
+        await tx.ticketEvent.create({
+          data: {
+            ticketId: ticket.id,
+            actorId: user.id,
+            type: EventType.REOPENED,
+            fromStatus: ticket.status,
+            toStatus: TicketStatus.OPEN,
+          },
+        });
+        return updated;
+      });
+    },
+    addComment: async (_parent, raw, context) => {
+      const user = current(context);
+      const args = argsOf<CommentArgs>(raw);
+      const ticket = await findRequired(db, args.ticketId);
+      if (!allowedTicket(ticket, user) || ticket.status === TicketStatus.CLOSED)
+        throw error('COMMENT_NOT_ALLOWED');
+      return db.$transaction(async (tx) => {
+        const comment = await tx.comment.create({
+          data: { ticketId: ticket.id, authorId: user.id, content: args.content },
+          include: { author: true },
+        });
+        const firstResponseAt =
+          user.role === Role.AGENT && ticket.firstResponseAt === null
+            ? comment.createdAt
+            : undefined;
+        if (firstResponseAt)
+          await tx.ticket.update({ where: { id: ticket.id }, data: { firstResponseAt } });
+        await tx.ticketEvent.create({
+          data: {
+            ticketId: ticket.id,
+            actorId: user.id,
+            type:
+              user.role === Role.AGENT && ticket.firstResponseAt === null
+                ? EventType.FIRST_RESPONSE
+                : EventType.COMMENT,
+            body: args.content,
+          },
+        });
+        return comment;
+      });
+    },
   };
   const queries: Record<string, Resolver> = {
-    tickets: async (_parent, raw, context) => { const user = current(context); const args = argsOf<TicketArgs>(raw); const take = Math.min(Math.max(args.take ?? 20, 1), 100); const filter = args.filter?.slaState ?? args.slaState; const rows = await db.ticket.findMany({ where: ticketWhere(user, args), include: ticketInclude, orderBy: [{ createdAt: 'desc' }, { id: 'desc' }] }); const filtered = filter ? (await Promise.all(rows.map(async row => ({ row, sla: await getSla(row) })))).filter(value => value.sla.firstResponseState === filter || value.sla.resolutionState === filter).map(value => value.row) : rows; const start = args.cursor ? Math.max(filtered.findIndex(row => row.id === decode(args.cursor!)) + 1, 0) : 0; const nodes = filtered.slice(start, start + take); return { nodes, pageInfo: { hasNextPage: start + take < filtered.length, endCursor: nodes.length ? encode(nodes[nodes.length - 1]!.id) : null } }; },
-    ticket: async (_parent, raw, context) => { const user = current(context); const ticket = await loadTicket(db, argsOf<{ id: string }>(raw).id); if (!allowedTicket(ticket, user)) throw error('FORBIDDEN'); return ticket; },
-    dashboard: async (_parent, _args, context) => { const user = current(context); const where = user.role === Role.REPORTER ? { reporterId: user.id } : {}; const [total, open, inProgress, resolved, closed] = await Promise.all([db.ticket.count({ where }), db.ticket.count({ where: { ...where, status: TicketStatus.OPEN } }), db.ticket.count({ where: { ...where, status: TicketStatus.IN_PROGRESS } }), db.ticket.count({ where: { ...where, status: TicketStatus.RESOLVED } }), db.ticket.count({ where: { ...where, status: TicketStatus.CLOSED } })]); const rows = await db.ticket.findMany({ where, include: ticketInclude }); const set = await holidays(db); const now = clock(); const breached = rows.filter(row => slaState(row.createdAt, row.responseDeadline, now, set, row.firstResponseAt) === 'BREACHED' || slaState(row.createdAt, row.resolutionDeadline, now, set, row.resolvedAt) === 'BREACHED').length; return { total, open, inProgress, resolved, closed, breached }; },
-    users: async (_parent, raw, context) => { current(context); const args = argsOf<{ role?: Role }>(raw); return db.user.findMany({ where: args.role ? { role: args.role } : {}, orderBy: { name: 'asc' } }); },
-    holidays: async (_parent, _args, context) => { current(context); return db.holiday.findMany({ orderBy: { date: 'asc' } }); }
+    tickets: async (_parent, raw, context) => {
+      const user = current(context);
+      const args = argsOf<TicketArgs>(raw);
+      const take = Math.min(Math.max(args.take ?? 20, 1), 100);
+      const filter = args.filter?.slaState ?? args.slaState;
+      const rows = await db.ticket.findMany({
+        where: ticketWhere(user, args),
+        include: ticketInclude,
+        orderBy: [{ createdAt: 'desc' }, { id: 'desc' }],
+      });
+      const filtered = filter
+        ? (await Promise.all(rows.map(async (row) => ({ row, sla: await getSla(row) }))))
+            .filter(
+              (value) =>
+                value.sla.firstResponseState === filter || value.sla.resolutionState === filter,
+            )
+            .map((value) => value.row)
+        : rows;
+      const start = args.cursor
+        ? Math.max(filtered.findIndex((row) => row.id === decode(args.cursor!)) + 1, 0)
+        : 0;
+      const nodes = filtered.slice(start, start + take);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: start + take < filtered.length,
+          endCursor: nodes.length ? encode(nodes[nodes.length - 1]!.id) : null,
+        },
+      };
+    },
+    ticket: async (_parent, raw, context) => {
+      const user = current(context);
+      const ticket = await loadTicket(db, argsOf<{ id: string }>(raw).id);
+      if (!allowedTicket(ticket, user)) throw error('FORBIDDEN');
+      return ticket;
+    },
+    dashboard: async (_parent, _args, context) => {
+      const user = current(context);
+      const where = user.role === Role.REPORTER ? { reporterId: user.id } : {};
+      const [total, open, inProgress, resolved, closed] = await Promise.all([
+        db.ticket.count({ where }),
+        db.ticket.count({ where: { ...where, status: TicketStatus.OPEN } }),
+        db.ticket.count({ where: { ...where, status: TicketStatus.IN_PROGRESS } }),
+        db.ticket.count({ where: { ...where, status: TicketStatus.RESOLVED } }),
+        db.ticket.count({ where: { ...where, status: TicketStatus.CLOSED } }),
+      ]);
+      const rows = await db.ticket.findMany({ where, include: ticketInclude });
+      const set = await holidays(db);
+      const now = clock();
+      const breached = rows.filter(
+        (row) =>
+          slaState(row.createdAt, row.responseDeadline, now, set, row.firstResponseAt) ===
+            'BREACHED' ||
+          slaState(row.createdAt, row.resolutionDeadline, now, set, row.resolvedAt) === 'BREACHED',
+      ).length;
+      return { total, open, inProgress, resolved, closed, breached };
+    },
+    users: async (_parent, raw, context) => {
+      current(context);
+      const args = argsOf<{ role?: Role }>(raw);
+      return db.user.findMany({
+        where: args.role ? { role: args.role } : {},
+        orderBy: { name: 'asc' },
+      });
+    },
+    holidays: async (_parent, _args, context) => {
+      current(context);
+      return db.holiday.findMany({ orderBy: { date: 'asc' } });
+    },
   };
-  return { DateTime: dateTime, Query: queries, Mutation: mutations, Ticket: { sla: (parent: unknown) => getSla(parent as TicketParent) }, Comment: { author: (parent: unknown) => (parent as CommentParent).author }, Holiday: { date: (parent: unknown) => localDate((parent as { date: Date }).date, process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata') }, ResolutionAttempt: { state: async (parent: unknown) => { const attempt = parent as { startedAt: Date; dueAt: Date; resolvedAt: Date | null }; return slaState(attempt.startedAt, attempt.dueAt, clock(), await holidays(db), attempt.resolvedAt, process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata'); }, remainingBusinessMinutes: async (parent: unknown) => { const attempt = parent as { dueAt: Date; resolvedAt: Date | null }; return attempt.resolvedAt ? 0 : remainingBusinessMinutes(clock(), attempt.dueAt, await holidays(db), process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata'); } } };
+  return {
+    DateTime: dateTime,
+    Query: queries,
+    Mutation: mutations,
+    Ticket: { sla: (parent: unknown) => getSla(parent as TicketParent) },
+    Comment: { author: (parent: unknown) => (parent as CommentParent).author },
+    Holiday: {
+      date: (parent: unknown) =>
+        localDate((parent as { date: Date }).date, process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata'),
+    },
+    ResolutionAttempt: {
+      state: async (parent: unknown) => {
+        const attempt = parent as { startedAt: Date; dueAt: Date; resolvedAt: Date | null };
+        return slaState(
+          attempt.startedAt,
+          attempt.dueAt,
+          clock(),
+          await holidays(db),
+          attempt.resolvedAt,
+          process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata',
+        );
+      },
+      remainingBusinessMinutes: async (parent: unknown) => {
+        const attempt = parent as { dueAt: Date; resolvedAt: Date | null };
+        return attempt.resolvedAt
+          ? 0
+          : remainingBusinessMinutes(
+              clock(),
+              attempt.dueAt,
+              await holidays(db),
+              process.env.BUSINESS_TIMEZONE ?? 'Asia/Kolkata',
+            );
+      },
+    },
+  };
 }
-async function changeStatus(db: PrismaClient, user: AuthUser, ticket: { id: string; status: TicketStatus }, status: TicketStatus, body?: string): Promise<TicketParent> { return db.$transaction(async tx => { const now = new Date(); const updated = await tx.ticket.update({ where: { id: ticket.id }, data: { status, resolvedAt: status === TicketStatus.RESOLVED ? now : undefined }, include: ticketInclude }); await tx.ticketEvent.create({ data: { ticketId: ticket.id, actorId: user.id, type: status === TicketStatus.RESOLVED ? EventType.RESOLVED : status === TicketStatus.CLOSED ? EventType.CLOSED : EventType.STATUS_CHANGED, fromStatus: ticket.status, toStatus: status, body } }); if (status === TicketStatus.RESOLVED) await tx.resolutionAttempt.updateMany({ where: { ticketId: ticket.id, resolvedAt: null }, data: { resolvedAt: now } }); return updated; }); }
+async function changeStatus(
+  db: PrismaClient,
+  user: AuthUser,
+  ticket: { id: string; status: TicketStatus },
+  status: TicketStatus,
+  body?: string,
+): Promise<TicketParent> {
+  return db.$transaction(async (tx) => {
+    const now = new Date();
+    const updated = await tx.ticket.update({
+      where: { id: ticket.id },
+      data: { status, resolvedAt: status === TicketStatus.RESOLVED ? now : undefined },
+      include: ticketInclude,
+    });
+    await tx.ticketEvent.create({
+      data: {
+        ticketId: ticket.id,
+        actorId: user.id,
+        type:
+          status === TicketStatus.RESOLVED
+            ? EventType.RESOLVED
+            : status === TicketStatus.CLOSED
+              ? EventType.CLOSED
+              : EventType.STATUS_CHANGED,
+        fromStatus: ticket.status,
+        toStatus: status,
+        body,
+      },
+    });
+    if (status === TicketStatus.RESOLVED)
+      await tx.resolutionAttempt.updateMany({
+        where: { ticketId: ticket.id, resolvedAt: null },
+        data: { resolvedAt: now },
+      });
+    return updated;
+  });
+}

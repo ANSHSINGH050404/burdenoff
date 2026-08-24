@@ -8,6 +8,8 @@
     "build:client": "vite build",
     "typecheck": "tsc --noEmit",
     "lint": "eslint .",
+    "format": "prettier --write .",
+    "format:check": "prettier --check .",
     "test": "bun test",
     "test:integration": "bun test tests/integration.test.ts",
     "db:generate": "prisma generate",
@@ -35,6 +37,7 @@
     "@types/react-dom": "^19.1.7",
     "@vitejs/plugin-react": "^5.0.2",
     "eslint": "^10.9.0",
+    "prettier": "^3.9.6",
     "typescript": "^5.9.2",
     "typescript-eslint": "^8.67.0"
   }
