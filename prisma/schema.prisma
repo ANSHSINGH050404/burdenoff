@@ -90,7 +90,7 @@ model Comment {
   id String @id @default(cuid())
   ticketId String
   authorId String
-  body String
+  content String
   createdAt DateTime @default(now())
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
   author User @relation("CommentAuthor", fields: [authorId], references: [id])
@@ -101,7 +101,10 @@ model ResolutionAttempt {
   ticketId String
   startedAt DateTime @default(now())
   resolvedAt DateTime?
+  dueAt DateTime
+  state SlaState @default(ON_TRACK)
   ticket Ticket @relation(fields: [ticketId], references: [id], onDelete: Cascade)
+  @@index([ticketId, startedAt])
 }
 model Holiday {
   id String @id @default(cuid())
