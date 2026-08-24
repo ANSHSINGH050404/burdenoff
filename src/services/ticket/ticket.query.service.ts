@@ -1,0 +1,112 @@
+import { gqlError } from '../../errors';
+import type { Priority, PrismaClient, TicketStatus } from '@prisma/client';
+import type { TicketRecord } from '../../repositories/ticket.repository';
+import { ticketRepository as tickets } from '../../repositories/ticket.repository';
+import type { AuthUser } from '../auth/guards';
+import { holidayDates } from '../holiday/holiday.service';
+import { computeSlaInfo, type SlaInfo } from '../sla/presenter';
+
+type Clock = () => Date;
+type SlaState = 'ON_TRACK' | 'AT_RISK' | 'BREACHED';
+
+export type TicketListArgs = {
+  id?: string;
+  status?: TicketStatus;
+  priority?: Priority;
+  assigneeId?: string;
+  slaState?: SlaState;
+  take?: number;
+  cursor?: string;
+  filter?: {
+    status?: TicketStatus;
+    priority?: Priority;
+    assigneeId?: string;
+    slaState?: SlaState;
+  };
+};
+
+export type TicketPage = {
+  nodes: TicketRecord[];
+  pageInfo: { hasNextPage: boolean; endCursor: string | null };
+};
+
+const encode = (id: string): string => Buffer.from(id).toString('base64url');
+const decode = (cursor: string): string => Buffer.from(cursor, 'base64url').toString();
+
+export function createTicketQueryService(db: PrismaClient, clock: Clock) {
+  function visibility(user: AuthUser) {
+    return user.role === 'AGENT' ? {} : { reporterId: user.id };
+  }
+
+  function canSee(ticket: { reporterId: string }, user: AuthUser): boolean {
+    return user.role === 'AGENT' || ticket.reporterId === user.id;
+  }
+
+  async function slaOf(ticket: TicketRecord): Promise<SlaInfo> {
+    return computeSlaInfo(ticket, await holidayDates(db), clock);
+  }
+
+  return {
+    async list(user: AuthUser, args: TicketListArgs): Promise<TicketPage> {
+      const take = Math.min(Math.max(args.take ?? 20, 1), 100);
+      const filter = args.filter ?? args;
+      const where = {
+        ...visibility(user),
+        ...(args.id ? { id: args.id } : {}),
+        ...(filter.status ? { status: filter.status } : {}),
+        ...(filter.priority ? { priority: filter.priority } : {}),
+        ...(filter.assigneeId ? { assigneeId: filter.assigneeId } : {}),
+      };
+      const rows = await tickets.findMany(db, where);
+      const requestedState = args.filter?.slaState ?? args.slaState;
+      const filtered = requestedState
+        ? (await Promise.all(rows.map(async (row) => ({ row, sla: await slaOf(row) }))))
+            .filter(
+              (entry) =>
+                entry.sla.firstResponseState === requestedState ||
+                entry.sla.resolutionState === requestedState,
+            )
+            .map((entry) => entry.row)
+        : rows;
+      const start = args.cursor
+        ? Math.max(filtered.findIndex((row) => row.id === decode(args.cursor!)) + 1, 0)
+        : 0;
+      const nodes = filtered.slice(start, start + take);
+      return {
+        nodes,
+        pageInfo: {
+          hasNextPage: start + take < filtered.length,
+          endCursor: nodes.length ? encode(nodes[nodes.length - 1]!.id) : null,
+        },
+      };
+    },
+
+    async get(user: AuthUser, id: string): Promise<TicketRecord> {
+      const ticket = await tickets.findFullById(db, id);
+      if (!ticket) throw gqlError('TICKET_NOT_FOUND');
+      if (!canSee(ticket, user)) throw gqlError('FORBIDDEN');
+      return ticket;
+    },
+
+    async dashboard(user: AuthUser) {
+      const where = visibility(user);
+      const counts = await tickets.counts(db, where);
+      const rows = await tickets.findMany(db, where);
+      const holidays = await holidayDates(db);
+      const now = clock();
+      const breached = rows.filter(
+        (row) =>
+          computeSlaInfo(row, holidays, () => now).firstResponseState === 'BREACHED' ||
+          computeSlaInfo(row, holidays, () => now).resolutionState === 'BREACHED',
+      ).length;
+      return {
+        total: counts.total,
+        open: counts.OPEN,
+        inProgress: counts.IN_PROGRESS,
+        resolved: counts.RESOLVED,
+        closed: counts.CLOSED,
+        breached,
+      };
+    },
+  };
+}

@@ -1,8 +1,8 @@
 import { describe, expect, test } from 'bun:test';
 import { graphql } from 'graphql';
 import { PrismaClient, Role } from '@prisma/client';
-import { createSchema } from '../src/api/schema';
-import type { Context } from '../src/api/resolvers';
+import { createSchema } from '../../src/graphql/schema';
+import type { Context } from '../../src/graphql/context';
 
 const enabled = Boolean(process.env.TEST_DATABASE_URL);
 describe('GraphQL PostgreSQL persistence flow', () => {

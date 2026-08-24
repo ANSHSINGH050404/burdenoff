@@ -1,9 +1,9 @@
 import { createYoga, type YogaInitialContext } from 'graphql-yoga';
 import { createServer } from 'node:http';
 import { PrismaClient } from '@prisma/client';
-import { authenticate } from './context';
-import { createSchema } from './api/schema';
-import type { Context } from './api/resolvers';
+import { authenticate } from './services/auth/jwt';
+import { createSchema } from './graphql/schema';
+import type { Context } from './graphql/context';
 
 const db = new PrismaClient();
 const schema = createSchema(db);

@@ -5,8 +5,8 @@ import {
   remainingBusinessMinutes,
   slaState,
   SLA_POLICY,
-  validTransition,
-} from '../src/domain/sla';
+} from '../../src/services/sla/engine';
+import { validTransition } from '../../src/services/ticket/transitions';
 describe('business-hour SLA', () => {
   test('uses nine-hour weekdays and skips holidays', () => {
     const start = new Date('2026-08-21T09:00:00Z');

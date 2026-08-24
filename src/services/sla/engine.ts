@@ -163,15 +163,3 @@ export function slaState(
   const remaining = remainingBusinessMinutes(now, deadline, holidays, timezone);
   return total > 0 && (total - remaining) / total > 0.75 ? 'AT_RISK' : 'ON_TRACK';
 }
-export function validTransition(from: string, to: string): boolean {
-  return (
-    (
-      {
-        OPEN: ['IN_PROGRESS'],
-        IN_PROGRESS: ['OPEN', 'RESOLVED'],
-        RESOLVED: ['CLOSED'],
-        CLOSED: [],
-      } as Readonly<Record<string, readonly string[]>>
-    )[from]?.includes(to) ?? false
-  );
-}
