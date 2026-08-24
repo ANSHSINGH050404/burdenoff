@@ -63,7 +63,9 @@ export function createTicketService(db: PrismaClient, clock: Clock) {
         await tickets.createEvent(tx, {
           ticketId: ticket.id,
           actorId: user.id,
-          type: 'STATUS_CHANGED',
+          type: 'ASSIGNED',
+          fromAssigneeId: ticket.assigneeId ?? undefined,
+          toAssigneeId: assignee.id,
           body: `Assigned to ${assignee.name}`,
         });
         return record;

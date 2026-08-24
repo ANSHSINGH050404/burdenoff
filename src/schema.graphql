@@ -54,6 +54,27 @@ type ResolutionAttempt {
   state: SLAState!
   remainingBusinessMinutes: Int!
 }
+enum TicketEventType {
+  CREATED
+  STATUS_CHANGED
+  ASSIGNED
+  FIRST_RESPONSE
+  COMMENT
+  RESOLVED
+  REOPENED
+  CLOSED
+}
+type TicketEvent {
+  id: ID!
+  type: TicketEventType!
+  actor: User!
+  fromStatus: TicketStatus
+  toStatus: TicketStatus
+  fromAssignee: User
+  toAssignee: User
+  body: String
+  createdAt: DateTime!
+}
 type Ticket {
   id: ID!
   title: String!
@@ -64,6 +85,7 @@ type Ticket {
   assignee: User
   comments: [Comment!]!
   resolutionAttempts: [ResolutionAttempt!]!
+  events: [TicketEvent!]!
   createdAt: DateTime!
   updatedAt: DateTime!
   firstResponseAt: DateTime

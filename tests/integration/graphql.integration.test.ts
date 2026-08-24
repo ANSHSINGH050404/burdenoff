@@ -53,6 +53,18 @@ describe('GraphQL PostgreSQL persistence flow', () => {
         (await db.ticket.findUniqueOrThrow({ where: { id: ticketId } })).firstResponseAt,
       ).not.toBeNull();
       expect(await db.comment.count({ where: { ticketId } })).toBe(1);
+      const assigned = await graphql({
+        schema,
+        source: `mutation { assignTicket(ticketId: "${ticketId}", assigneeId: "${agent.id}") { id assignee { id } } }`,
+        contextValue: context(agent.id, agent.role),
+      });
+      expect(assigned.errors).toBeUndefined();
+      const auditEvents = await db.ticketEvent.findMany({
+        where: { ticketId, type: 'ASSIGNED' },
+      });
+      expect(auditEvents).toHaveLength(1);
+      expect(auditEvents[0]!.toAssigneeId).toBe(agent.id);
+      expect(auditEvents[0]!.actorId).toBe(agent.id);
       const forbidden = await graphql({
         schema,
         source:

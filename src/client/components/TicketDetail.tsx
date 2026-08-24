@@ -194,6 +194,27 @@ export function TicketDetail({ ticket, me, users, token, onDone, onError }: Prop
       )}
 
       <div className="flex min-h-0 flex-col gap-3">
+        <h3 className="font-bold">History</h3>
+        <div className="grid gap-1.5">
+          {[...(ticket.events ?? [])].reverse().map((event) => (
+            <small key={event.id} className="text-xs text-stone-500">
+              <b className="text-stone-600">{formatDateTime(event.createdAt)}</b> ·{' '}
+              {event.actor.name} · {event.type}
+              {event.fromStatus && event.toStatus
+                ? ` (${event.fromStatus} → ${event.toStatus})`
+                : ''}
+              {event.fromAssignee || event.toAssignee
+                ? ` (${event.fromAssignee?.name ?? '—'} → ${event.toAssignee?.name ?? '—'})`
+                : ''}
+            </small>
+          ))}
+          {(ticket.events ?? []).length === 0 && (
+            <p className="text-sm text-stone-400">No recorded activity.</p>
+          )}
+        </div>
+      </div>
+
+      <div className="flex min-h-0 flex-col gap-3">
         <h3 className="font-bold">Conversation</h3>
         {ticket.comments.map((comment) => (
           <div key={comment.id} className="rounded border border-stone-100 bg-stone-50/60 p-3">

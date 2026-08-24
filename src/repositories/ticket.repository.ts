@@ -7,6 +7,7 @@ export type TicketRecord = Prisma.TicketGetPayload<{
     assignee: true;
     comments: { include: { author: true }; orderBy: { createdAt: 'asc' } };
     resolutionAttempts: { orderBy: { startedAt: 'asc' } };
+    events: { include: { actor: true }; orderBy: { createdAt: 'desc' } };
   };
 }>;
 
@@ -15,6 +16,7 @@ export type CommentRecord = Prisma.CommentGetPayload<{ include: { author: true }
 export type TicketCore = {
   id: string;
   reporterId: string;
+  assigneeId: string | null;
   status: TicketStatus;
   firstResponseAt: Date | null;
   resolvedAt: Date | null;
@@ -38,6 +40,7 @@ export const ticketRepository = {
       select: {
         id: true,
         reporterId: true,
+        assigneeId: true,
         status: true,
         firstResponseAt: true,
         resolvedAt: true,
@@ -118,6 +121,7 @@ export const ticketRepository = {
       type:
         | 'CREATED'
         | 'STATUS_CHANGED'
+        | 'ASSIGNED'
         | 'FIRST_RESPONSE'
         | 'COMMENT'
         | 'RESOLVED'
@@ -125,6 +129,8 @@ export const ticketRepository = {
         | 'CLOSED';
       fromStatus?: TicketStatus;
       toStatus?: TicketStatus;
+      fromAssigneeId?: string;
+      toAssigneeId?: string;
       body?: string;
     },
   ): Promise<unknown> {
@@ -148,4 +154,5 @@ const ticketInclude = {
   assignee: true,
   comments: { include: { author: true }, orderBy: { createdAt: 'asc' as const } },
   resolutionAttempts: { orderBy: { startedAt: 'asc' as const } },
+  events: { include: { actor: true }, orderBy: { createdAt: 'desc' as const } },
 } satisfies Prisma.TicketInclude;
