@@ -44,8 +44,8 @@ export function createTicketQueryService(db: PrismaClient, clock: Clock) {
     return user.role === 'AGENT' || ticket.reporterId === user.id;
   }
 
-  async function slaOf(ticket: TicketRecord): Promise<SlaInfo> {
-    return computeSlaInfo(ticket, await holidayDates(db), clock);
+  async function slaOf(ticket: TicketRecord, holidays: Set<string>): Promise<SlaInfo> {
+    return computeSlaInfo(ticket, holidays, clock);
   }
 
   return {
@@ -61,18 +61,30 @@ export function createTicketQueryService(db: PrismaClient, clock: Clock) {
       };
       const rows = await tickets.findMany(db, where);
       const requestedState = args.filter?.slaState ?? args.slaState;
-      const filtered = requestedState
-        ? (await Promise.all(rows.map(async (row) => ({ row, sla: await slaOf(row) }))))
-            .filter(
-              (entry) =>
-                entry.sla.firstResponseState === requestedState ||
-                entry.sla.resolutionState === requestedState,
-            )
-            .map((entry) => entry.row)
-        : rows;
-      const start = args.cursor
-        ? Math.max(filtered.findIndex((row) => row.id === decode(args.cursor!)) + 1, 0)
-        : 0;
+      let filtered = rows;
+      if (requestedState) {
+        const holidays = await holidayDates(db);
+        const withSla = await Promise.all(
+          rows.map(async (row) => ({ row, sla: await slaOf(row, holidays) })),
+        );
+        filtered = withSla
+          .filter(
+            (entry) =>
+              entry.sla.firstResponseState === requestedState ||
+              entry.sla.resolutionState === requestedState,
+          )
+          .map((entry) => entry.row);
+      }
+      let start = 0;
+      if (args.cursor) {
+        try {
+          const decodedId = decode(args.cursor);
+          const idx = filtered.findIndex((row) => row.id === decodedId);
+          start = idx >= 0 ? idx + 1 : 0;
+        } catch {
+          start = 0;
+        }
+      }
       const nodes = filtered.slice(start, start + take);
       return {
         nodes,
@@ -92,15 +104,17 @@ export function createTicketQueryService(db: PrismaClient, clock: Clock) {
 
     async dashboard(user: AuthUser) {
       const where = visibility(user);
-      const counts = await tickets.counts(db, where);
-      const rows = await tickets.findMany(db, where);
-      const holidays = await holidayDates(db);
+      const [counts, rows, holidays] = await Promise.all([
+        tickets.counts(db, where),
+        tickets.findMany(db, where),
+        holidayDates(db),
+      ]);
       const now = clock();
-      const breached = rows.filter(
-        (row) =>
-          computeSlaInfo(row, holidays, () => now).firstResponseState === 'BREACHED' ||
-          computeSlaInfo(row, holidays, () => now).resolutionState === 'BREACHED',
-      ).length;
+      let breached = 0;
+      for (const row of rows) {
+        const sla = computeSlaInfo(row, holidays, () => now);
+        if (sla.firstResponseState === 'BREACHED' || sla.resolutionState === 'BREACHED') breached++;
+      }
       return {
         total: counts.total,
         open: counts.OPEN,
