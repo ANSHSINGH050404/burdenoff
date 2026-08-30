@@ -20,6 +20,10 @@ export function createResolvers(db: PrismaClient, clock: () => Date = () => new 
   const ticketQueries = createTicketQueryService(db, clock);
 
   const queries = {
+    me: (_parent: unknown, _args: Record<string, never>, context: Context) => {
+      const user = currentUser(context);
+      return db.user.findUniqueOrThrow({ where: { id: user.id } });
+    },
     tickets: (_parent: unknown, args: ListArgs, context: Context) =>
       ticketQueries.list(currentUser(context), args),
     ticket: (_parent: unknown, args: { id: string }, context: Context) =>

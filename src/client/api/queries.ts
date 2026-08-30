@@ -9,6 +9,8 @@ export const dashboardQuery = `query Dashboard { dashboard { total open inProgre
 
 export const agentStatsQuery = `query AgentStats { agentStats { agent { ${userFields} } assignedTickets openAssigned resolvedTickets avgFirstResponseBusinessMinutes } }`;
 
+export const meQuery = `query Me { me { ${userFields} } }`;
+
 export const usersQuery = `query Users { users { ${userFields} } }`;
 
 export const holidaysQuery = `query Holidays { holidays { id date name } }`;

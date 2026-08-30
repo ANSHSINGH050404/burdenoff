@@ -30,6 +30,7 @@ export function createTicketService(db: PrismaClient, clock: Clock) {
       user: AuthUser,
       input: { title: string; description: string; priority?: Priority },
     ): Promise<TicketRecord> {
+      if (user.role !== 'REPORTER') throw gqlError('FORBIDDEN');
       const title = requireText(input.title, 'VALIDATION_ERROR', { min: 1, max: 200 });
       const description = requireText(input.description, 'VALIDATION_ERROR', {
         min: 1,

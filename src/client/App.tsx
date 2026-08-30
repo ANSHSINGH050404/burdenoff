@@ -1,9 +1,11 @@
 import { useEffect, useState } from 'react';
 import { request } from './api/client';
 import {
+  agentStatsQuery,
   dashboardQuery,
   holidaysQuery,
   listQuery,
+  meQuery,
   ticketDetailQuery,
   usersQuery,
 } from './api/queries';
@@ -16,7 +18,6 @@ import type {
   TicketFilters,
   User,
 } from './api/types';
-import { agentStatsQuery } from './api/queries';
 import { AgentStats } from './components/AgentStats';
 import { AuthForm } from './components/AuthForm';
 import { CreateTicketForm } from './components/CreateTicketForm';
@@ -25,9 +26,41 @@ import { FiltersBar } from './components/FiltersBar';
 import { TicketDetail } from './components/TicketDetail';
 import { TicketList } from './components/TicketList';
 
+const STORAGE_TOKEN_KEY = 'burdenoff:token';
+const STORAGE_USER_KEY = 'burdenoff:user';
+
+function readStoredToken(): string {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return '';
+    return localStorage.getItem(STORAGE_TOKEN_KEY) ?? '';
+  } catch {
+    return '';
+  }
+}
+
+function readStoredUser(): User | undefined {
+  try {
+    if (typeof window === 'undefined' || !window.localStorage) return undefined;
+    const raw = localStorage.getItem(STORAGE_USER_KEY);
+    if (!raw) return undefined;
+    return JSON.parse(raw) as User;
+  } catch {
+    return undefined;
+  }
+}
+
+function isUnauthenticated(error: unknown): boolean {
+  if (!(error instanceof Error)) return false;
+  return error.message.includes('UNAUTHENTICATED');
+}
+
 export function App() {
-  const [token, setToken] = useState('');
-  const [me, setMe] = useState<User>();
+  const [token, setToken] = useState(() => readStoredToken());
+  const [me, setMe] = useState<User | undefined>(() => {
+    const t = readStoredToken();
+    if (!t) return undefined;
+    return readStoredUser();
+  });
   const [error, setError] = useState('');
   const [tickets, setTickets] = useState<Ticket[]>([]);
   const [selected, setSelected] = useState<Ticket>();
@@ -40,6 +73,68 @@ export function App() {
   const [page, setPage] = useState<ConnectionPage>();
   const [, setTick] = useState(0);
   const [lastUpdated, setLastUpdated] = useState<number>();
+  const [hydrating, setHydrating] = useState(() => {
+    const t = readStoredToken();
+    const u = readStoredUser();
+    return Boolean(t && !u);
+  });
+
+  // Persist token
+  useEffect(() => {
+    try {
+      if (token) localStorage.setItem(STORAGE_TOKEN_KEY, token);
+      else localStorage.removeItem(STORAGE_TOKEN_KEY);
+    } catch {
+      // ignore quota / privacy mode
+    }
+  }, [token]);
+
+  // Persist user
+  useEffect(() => {
+    try {
+      if (me) localStorage.setItem(STORAGE_USER_KEY, JSON.stringify(me));
+      else if (!hydrating) localStorage.removeItem(STORAGE_USER_KEY);
+    } catch {
+      // ignore
+    }
+  }, [me, hydrating]);
+
+  // Hydrate me from stored token when user JSON is missing/corrupted.
+  // Uses authoritative /graphql me query so name/role stay in sync.
+  useEffect(() => {
+    if (!token || me) {
+      if (hydrating) setHydrating(false);
+      return;
+    }
+    let cancelled = false;
+    request<{ me: User }>(token, meQuery)
+      .then((data) => {
+        if (cancelled) return;
+        setMe(data.me);
+        setHydrating(false);
+      })
+      .catch((caught) => {
+        if (cancelled) return;
+        const message = caught instanceof Error ? caught.message : 'RESTORE_FAILED';
+        if (isUnauthenticated(caught)) {
+          try {
+            localStorage.removeItem(STORAGE_TOKEN_KEY);
+            localStorage.removeItem(STORAGE_USER_KEY);
+          } catch {
+            // ignore
+          }
+          setToken('');
+          setMe(undefined);
+          setHydrating(false);
+        } else {
+          setError(message);
+          setHydrating(false);
+        }
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [token, me, hydrating]);
 
   useEffect(() => {
     const id = setInterval(() => setTick((value) => value + 1), 1000);
@@ -47,12 +142,24 @@ export function App() {
   }, []);
 
   useEffect(() => {
-    if (!token) return;
+    if (!token || hydrating) return;
     // Poll periodically so SLA state and countdowns stay live; the API
     // remains the only source of truth for breach/risk calculations.
     const id = setInterval(() => void refresh(), 30_000);
     return () => clearInterval(id);
-  }, [token]);
+  }, [token, hydrating]);
+
+  function clearAuth() {
+    try {
+      localStorage.removeItem(STORAGE_TOKEN_KEY);
+      localStorage.removeItem(STORAGE_USER_KEY);
+    } catch {
+      // ignore
+    }
+    setToken('');
+    setMe(undefined);
+    setSelected(undefined);
+  }
 
   async function refresh() {
     try {
@@ -78,6 +185,11 @@ export function App() {
       if (perf) setAgentStats(perf.agentStats);
       setLastUpdated(Date.now());
     } catch (caught) {
+      if (isUnauthenticated(caught)) {
+        clearAuth();
+        setError(caught instanceof Error ? caught.message : 'UNAUTHENTICATED');
+        return;
+      }
       setError(caught instanceof Error ? caught.message : 'LOAD_FAILED');
     }
   }
@@ -96,20 +208,37 @@ export function App() {
       ]);
       setPage(list.tickets.pageInfo);
     } catch (caught) {
+      if (isUnauthenticated(caught)) {
+        clearAuth();
+        return;
+      }
       setError(caught instanceof Error ? caught.message : 'LOAD_FAILED');
     }
   }
 
   useEffect(() => {
-    if (token) void refresh();
-  }, [token, filters]);
+    if (!token || hydrating) return;
+    void refresh();
+  }, [token, filters, hydrating]);
 
   async function openTicket(id: string) {
     try {
       setSelected((await request<{ ticket: Ticket }>(token, ticketDetailQuery, { id })).ticket);
     } catch (caught) {
+      if (isUnauthenticated(caught)) {
+        clearAuth();
+        return;
+      }
       setError(caught instanceof Error ? caught.message : 'DETAIL_FAILED');
     }
+  }
+
+  if (hydrating) {
+    return (
+      <div className="grid min-h-screen place-items-center bg-stone-50">
+        <p className="text-sm text-stone-500">Restoring session…</p>
+      </div>
+    );
   }
 
   if (!token || !me)
@@ -144,9 +273,7 @@ export function App() {
           <span className="font-semibold text-stone-600">{me.name}</span>
           <button
             onClick={() => {
-              setToken('');
-              setMe(undefined);
-              setSelected(undefined);
+              clearAuth();
             }}
             className="rounded border border-stone-300 px-3 py-1.5 text-stone-600 hover:bg-stone-50"
           >

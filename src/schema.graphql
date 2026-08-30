@@ -126,6 +126,7 @@ input TicketFilter {
   slaState: SLAState
 }
 type Query {
+  me: User!
   tickets(
     id: ID
     status: TicketStatus
