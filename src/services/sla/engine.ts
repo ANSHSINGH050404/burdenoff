@@ -17,6 +17,8 @@ type DateParts = {
 };
 type Interval = { start: Date; end: Date };
 const DAY = 86_400_000;
+
+
 function dateParts(date: Date, timezone: string): DateParts {
   const values = new Intl.DateTimeFormat('en-US', {
     timeZone: timezone,
@@ -63,6 +65,7 @@ function localToUtc(
   }
   return guess;
 }
+
 function nextLocalDay(p: DateParts): DateParts {
   const next = new Date(Date.UTC(p.year, p.month - 1, p.day + 1));
   return {
@@ -74,6 +77,7 @@ function nextLocalDay(p: DateParts): DateParts {
     weekday: next.getUTCDay() || 7,
   };
 }
+
 function intervals(
   start: Date,
   end: Date,
@@ -112,6 +116,7 @@ export function remainingBusinessMinutes(
     0,
   );
 }
+
 export function addBusinessMinutes(
   start: Date,
   amount: number,
