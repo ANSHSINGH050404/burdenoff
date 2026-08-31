@@ -11,15 +11,15 @@ type LoginInput = { email: string; password: string };
 export function createAuthService(db: PrismaClient) {
   return {
     async register(input: RegisterInput) {
-      if (input.role === 'AGENT') throw gqlError('FORBIDDEN');
+      const role = input.role ?? 'REPORTER';
+      if (role !== 'REPORTER' && role !== 'AGENT') throw gqlError('VALIDATION_ERROR', 'Invalid role');
       const name = requireText(input.name, 'VALIDATION_ERROR', { min: 1, max: 200 });
       const email = requireEmail(input.email);
       const password = requirePassword(input.password);
       const passwordHash = await bcrypt.hash(password, 12);
       const created = await users
-        .create(db, { email, name, passwordHash, role: 'REPORTER' })
+        .create(db, { email, name, passwordHash, role })
         .catch(() => {
-          // Generic error avoids account enumeration.
           throw gqlError('VALIDATION_ERROR', 'Registration failed');
         });
       return {

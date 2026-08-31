@@ -17,7 +17,7 @@ export const holidaysQuery = `query Holidays { holidays { id date name } }`;
 
 export const loginMutation = `mutation Login($email: String!, $password: String!) { login(email: $email, password: $password) { token user { ${userFields} } } }`;
 
-export const registerMutation = `mutation Register($name: String!, $email: String!, $password: String!) { register(name: $name, email: $email, password: $password) { token user { ${userFields} } } }`;
+export const registerMutation = `mutation Register($name: String!, $email: String!, $password: String!, $role: UserRole) { register(name: $name, email: $email, password: $password, role: $role) { token user { ${userFields} } } }`;
 
 export const createTicketMutation = `mutation Create($title: String!, $description: String!, $priority: Priority!) { createTicket(title: $title, description: $description, priority: $priority) { id } }`;
 

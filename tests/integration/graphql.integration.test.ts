@@ -65,12 +65,13 @@ describe('GraphQL PostgreSQL persistence flow', () => {
       expect(auditEvents).toHaveLength(1);
       expect(auditEvents[0]!.toAssigneeId).toBe(agent.id);
       expect(auditEvents[0]!.actorId).toBe(agent.id);
-      const forbidden = await graphql({
+      const agentRegistration = await graphql({
         schema,
         source:
-          'mutation { register(name: "Agent", email: "should-not-register@example.com", password: "password", role: AGENT) { token } }',
+          'mutation { register(name: "AgentTwo", email: "should-register-agent@example.com", password: "password123", role: AGENT) { token user { role } } }',
       });
-      expect(forbidden.errors?.[0]?.extensions.code).toBe('FORBIDDEN');
+      expect(agentRegistration.errors).toBeUndefined();
+      expect((agentRegistration.data as { register: { user: { role: string } } }).register.user.role).toBe('AGENT');
       const invalidTransition = await graphql({
         schema,
         source: `mutation { changeTicketStatus(ticketId: "${ticketId}", status: RESOLVED) { id } }`,

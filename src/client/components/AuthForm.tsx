@@ -17,6 +17,7 @@ export function AuthForm({ onLogin, onError, errorMessage }: Props) {
   const [name, setName] = useState('');
   const [email, setEmail] = useState('');
   const [password, setPassword] = useState('');
+  const [role, setRole] = useState<'REPORTER' | 'AGENT'>('REPORTER');
 
   async function submit(event: FormEvent) {
     event.preventDefault();
@@ -24,7 +25,7 @@ export function AuthForm({ onLogin, onError, errorMessage }: Props) {
       const data = await request<Record<string, AuthPayload | undefined>>(
         '',
         registering ? registerMutation : loginMutation,
-        registering ? { name, email, password } : { email, password },
+        registering ? { name, email, password, role } : { email, password },
       );
       const result = data.login ?? data.register;
       if (result) onLogin(result.token, result.user);
@@ -49,7 +50,7 @@ export function AuthForm({ onLogin, onError, errorMessage }: Props) {
         className="flex flex-col gap-4 rounded border border-stone-200 bg-white p-8 shadow-sm"
       >
         <span className="text-[11px] font-bold tracking-[0.16em] text-orange-600 uppercase">
-          {registering ? 'New reporter' : 'Workspace access'}
+          {registering ? 'New account' : 'Workspace access'}
         </span>
         <h2 className="text-xl font-bold">{registering ? 'Create an account' : 'Welcome back'}</h2>
         {errorMessage && (
@@ -69,6 +70,19 @@ export function AuthForm({ onLogin, onError, errorMessage }: Props) {
               onChange={(event) => setName(event.target.value)}
               className={inputClass}
             />
+          </label>
+        )}
+        {registering && (
+          <label className="text-sm font-semibold text-stone-600">
+            Role
+            <select
+              value={role}
+              onChange={(event) => setRole(event.target.value as 'REPORTER' | 'AGENT')}
+              className={inputClass}
+            >
+              <option value="REPORTER">Reporter — create & track tickets</option>
+              <option value="AGENT">Agent — triage & resolve tickets</option>
+            </select>
           </label>
         )}
         <label className="text-sm font-semibold text-stone-600">
@@ -96,7 +110,7 @@ export function AuthForm({ onLogin, onError, errorMessage }: Props) {
           type="submit"
           className="rounded bg-emerald-900 px-4 py-2.5 font-bold text-white hover:bg-emerald-800"
         >
-          {registering ? 'Create reporter account' : 'Sign in'}
+          {registering ? `Create ${role.toLowerCase()} account` : 'Sign in'}
         </button>
         <button
           type="button"

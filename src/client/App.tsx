@@ -313,7 +313,9 @@ export function App() {
               </span>
               <h2 className="font-bold">{tickets.length} tickets</h2>
             </div>
-            <CreateTicketForm token={token} onDone={refresh} onError={setError} />
+            {me.role === 'REPORTER' && (
+              <CreateTicketForm token={token} onDone={refresh} onError={setError} />
+            )}
           </div>
           <div className="border-b border-stone-100 p-3">
             <FiltersBar
